@@ -6,9 +6,9 @@ const INK = "#341616";
 const WHITE = "#FFFFFF";
 
 // ---- CONFIGURE THESE THREE VALUES ----
-const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/REPLACE_WITH_YOUR_WEBHOOK_ID";
-const CLOUDINARY_CLOUD_NAME = "REPLACE_WITH_YOUR_CLOUD_NAME";
-const CLOUDINARY_UPLOAD_PRESET = "REPLACE_WITH_YOUR_UNSIGNED_PRESET";
+const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/5g4awnajt7q4iz6hp2i554v4v3364jfc";
+const CLOUDINARY_CLOUD_NAME = "rkk64dqh";
+const CLOUDINARY_UPLOAD_PRESET = "iggjii4o";
 // ---------------------------------------
 
 async function uploadToCloudinary(file, resourceType) {
