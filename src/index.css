@@ -1,0 +1,22 @@
+/*
+  FONT SETUP — Alte Haas Grotesk
+  Font files live in public/fonts/ (already added).
+*/
+@font-face {
+  font-family: "Alte Haas Grotesk";
+  src: url("/fonts/AlteHaasGroteskRegular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Alte Haas Grotesk";
+  src: url("/fonts/AlteHaasGroteskBold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
