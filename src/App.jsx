@@ -6,9 +6,9 @@ const INK = "#341616";
 const WHITE = "#FFFFFF";
 
 // ---- CONFIGURE THESE THREE VALUES ----
-const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/5g4awnajt7q4iz6hp2i554v4v3364jfc";
-const CLOUDINARY_CLOUD_NAME = "rkk64dqh";
-const CLOUDINARY_UPLOAD_PRESET = "iggjii4o";
+const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/REPLACE_WITH_YOUR_WEBHOOK_ID";
+const CLOUDINARY_CLOUD_NAME = "REPLACE_WITH_YOUR_CLOUD_NAME";
+const CLOUDINARY_UPLOAD_PRESET = "REPLACE_WITH_YOUR_UNSIGNED_PRESET";
 // ---------------------------------------
 
 async function uploadToCloudinary(file, resourceType) {
@@ -20,6 +20,120 @@ async function uploadToCloudinary(file, resourceType) {
   if (!res.ok) throw new Error(`Cloudinary upload failed (${resourceType})`);
   const data = await res.json();
   return data.secure_url;
+}
+
+function renderCover(ctx, w, h, format, state) {
+  const { djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay } = state;
+
+  ctx.fillStyle = INK;
+  ctx.fillRect(0, 0, w, h);
+
+  if (imgEl) {
+    const scale = Math.max(w / imgEl.width, h / imgEl.height);
+    const iw = imgEl.width * scale;
+    const ih = imgEl.height * scale;
+    ctx.drawImage(imgEl, (w - iw) / 2, (h - ih) / 2, iw, ih);
+  } else {
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, "#1c1c22");
+    grad.addColorStop(1, "#0a0a0c");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.font = `${Math.round(w * 0.045)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText("upload a cover image", w / 2, h / 2);
+  }
+
+  // All measurements below are calibrated against a 1080px-wide canvas,
+  // so we scale everything by k = w / 1080 to stay correct at other widths
+  // (e.g. the 1200px-wide SoundCloud square).
+  const k = w / 1080;
+  const fontStack = FONTS_READY
+    ? `"Alte Haas Grotesk", -apple-system, "Helvetica Neue", Arial, sans-serif`
+    : `-apple-system, "Helvetica Neue", Arial, sans-serif`;
+  const padX = 40 * k;
+  const padTop = 40 * k;
+  const padBottom = 40 * k;
+
+  // The story format (1080x1920) gets equal top/bottom padding so the
+  // actual text-to-logo content zone is a consistent 1440px tall, matching
+  // the "tall" 1080x1440 export. Other formats have no added padding.
+  const storyPad = format === "story" ? ((h - 1440 * k) / 2) : 0;
+  const contentTop = storyPad;
+  const contentBottom = storyPad;
+
+  // ---- Optional dark gradient overlay behind the top text block ----
+  // Helps text stay legible when the uploaded cover photo is light.
+  // Always anchored to the very top of the canvas (not the padded content
+  // zone), so in the story format it spans the padding *and* into the
+  // text area rather than being offset by it.
+  if (darkOverlay) {
+    const overlayH = (format === "story" ? 550 : 260) * k;
+    const grad = ctx.createLinearGradient(0, 0, 0, overlayH);
+    grad.addColorStop(0, "rgba(0,0,0,0.55)");
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, overlayH);
+  }
+
+  // ---- DJ name (top-left) ----
+  const djFontSize = 96 * k;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `700 ${djFontSize}px ${fontStack}`;
+  const djBaseline = contentTop + padTop + djFontSize * 0.78;
+  ctx.fillText(djName || "dj name", padX, djBaseline);
+
+  // ---- Genre pills (below DJ name) ----
+  const genreFontSize = 32 * k;
+  const genreList = genres.split(",").map((g) => g.trim()).filter(Boolean).slice(0, 4);
+  let cx = padX;
+  const pillY = djBaseline + djFontSize * 0.32;
+  const pillH = genreFontSize + 28 * k;
+  const pillPadX = 24 * k;
+  const pillGap = 18 * k;
+  ctx.font = `400 ${genreFontSize}px ${fontStack}`;
+  genreList.forEach((g) => {
+    const tw = ctx.measureText(g).width + pillPadX * 2;
+    ctx.fillStyle = "#FEBAED";
+    ctx.beginPath();
+    ctx.rect(cx, pillY, tw, pillH);
+    ctx.fill();
+    ctx.fillStyle = "#111111";
+    ctx.textBaseline = "middle";
+    ctx.fillText(g, cx + pillPadX, pillY + pillH / 2 + 1);
+    ctx.textBaseline = "alphabetic";
+    cx += tw + pillGap;
+  });
+
+  // ---- Show name / date / time (top-right, right-aligned) ----
+  const showFontSize = 48 * k;
+  const lineHeight = showFontSize * 1.15;
+  ctx.textAlign = "right";
+  const rightX = w - padX;
+  ctx.fillStyle = "#FFFFFF";
+  const showBaseline = contentTop + padTop + showFontSize * 0.78;
+  ctx.font = `700 ${showFontSize}px ${fontStack}`;
+  ctx.fillText(showName || "Show name", rightX, showBaseline);
+  ctx.font = `400 ${showFontSize}px ${fontStack}`;
+  ctx.fillText(formatDateFr(date), rightX, showBaseline + lineHeight);
+  ctx.fillText(time || "", rightX, showBaseline + lineHeight * 2);
+  ctx.textAlign = "left";
+
+  // ---- Logo (bottom-left) ----
+  if (logoEl) {
+    const logoW = w - padX * 2;
+    const logoH = logoW * (logoEl.height / logoEl.width);
+    ctx.drawImage(logoEl, padX, h - logoH - padBottom - contentBottom, logoW, logoH);
+  }
+}
+
+function dimsForFormat(format) {
+  return format === "story" ? { w: 1080, h: 1920 } :
+    format === "tall" ? { w: 1080, h: 1440 } :
+    { w: 1200, h: 1200 };
 }
 
 export default function ShowCoverStudio() {
@@ -74,10 +188,7 @@ export default function ShowCoverStudio() {
     reader.readAsDataURL(file);
   }, []);
 
-  const dims =
-    format === "story" ? { w: 1080, h: 1920 } :
-    format === "tall" ? { w: 1080, h: 1440 } :
-    { w: 1200, h: 1200 };
+  const dims = dimsForFormat(format);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -85,114 +196,26 @@ export default function ShowCoverStudio() {
     const { w, h } = dims;
     canvas.width = w;
     canvas.height = h;
-    const ctx = canvas.getContext("2d");
-
-    ctx.fillStyle = INK;
-    ctx.fillRect(0, 0, w, h);
-
-    if (imgEl) {
-      const scale = Math.max(w / imgEl.width, h / imgEl.height);
-      const iw = imgEl.width * scale;
-      const ih = imgEl.height * scale;
-      ctx.drawImage(imgEl, (w - iw) / 2, (h - ih) / 2, iw, ih);
-    } else {
-      const grad = ctx.createLinearGradient(0, 0, w, h);
-      grad.addColorStop(0, "#1c1c22");
-      grad.addColorStop(1, "#0a0a0c");
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = "rgba(255,255,255,0.18)";
-      ctx.font = `${Math.round(w * 0.045)}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.fillText("upload a cover image", w / 2, h / 2);
-    }
-
-    // All measurements below are calibrated against a 1080px-wide canvas,
-    // so we scale everything by k = w / 1080 to stay correct at other widths
-    // (e.g. the 1200px-wide SoundCloud square).
-    const k = w / 1080;
-    const fontStack = FONTS_READY
-      ? `"Alte Haas Grotesk", -apple-system, "Helvetica Neue", Arial, sans-serif`
-      : `-apple-system, "Helvetica Neue", Arial, sans-serif`;
-    const padX = 40 * k;
-    const padTop = 40 * k;
-    const padBottom = 40 * k;
-
-    // The story format (1080x1920) gets equal top/bottom padding so the
-    // actual text-to-logo content zone is a consistent 1440px tall, matching
-    // the "tall" 1080x1440 export. Other formats have no added padding.
-    const storyPad = format === "story" ? ((h - 1440 * k) / 2) : 0;
-    const contentTop = storyPad;
-    const contentBottom = storyPad;
-
-    // ---- Optional dark gradient overlay behind the top text block ----
-    // Helps text stay legible when the uploaded cover photo is light.
-    // Always anchored to the very top of the canvas (not the padded content
-    // zone), so in the story format it spans the padding *and* into the
-    // text area rather than being offset by it.
-    if (darkOverlay) {
-      const overlayH = (format === "story" ? 550 : 260) * k;
-      const grad = ctx.createLinearGradient(0, 0, 0, overlayH);
-      grad.addColorStop(0, "rgba(0,0,0,0.55)");
-      grad.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, overlayH);
-    }
-
-    // ---- DJ name (top-left) ----
-    const djFontSize = 96 * k;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "#FFFFFF";
-    ctx.font = `700 ${djFontSize}px ${fontStack}`;
-    const djBaseline = contentTop + padTop + djFontSize * 0.78;
-    ctx.fillText(djName || "dj name", padX, djBaseline);
-
-    // ---- Genre pills (below DJ name) ----
-    const genreFontSize = 32 * k;
-    const genreList = genres.split(",").map((g) => g.trim()).filter(Boolean).slice(0, 4);
-    let cx = padX;
-    const pillY = djBaseline + djFontSize * 0.32;
-    const pillH = genreFontSize + 28 * k;
-    const pillPadX = 24 * k;
-    const pillGap = 18 * k;
-    ctx.font = `400 ${genreFontSize}px ${fontStack}`;
-    genreList.forEach((g) => {
-      const tw = ctx.measureText(g).width + pillPadX * 2;
-      ctx.fillStyle = "#FEBAED";
-      ctx.beginPath();
-      ctx.rect(cx, pillY, tw, pillH);
-      ctx.fill();
-      ctx.fillStyle = "#111111";
-      ctx.textBaseline = "middle";
-      ctx.fillText(g, cx + pillPadX, pillY + pillH / 2 + 1);
-      ctx.textBaseline = "alphabetic";
-      cx += tw + pillGap;
+    renderCover(canvas.getContext("2d"), w, h, format, {
+      djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay,
     });
-
-    // ---- Show name / date / time (top-right, right-aligned) ----
-    const showFontSize = 48 * k;
-    const lineHeight = showFontSize * 1.15;
-    ctx.textAlign = "right";
-    const rightX = w - padX;
-    ctx.fillStyle = "#FFFFFF";
-    const showBaseline = contentTop + padTop + showFontSize * 0.78;
-    ctx.font = `700 ${showFontSize}px ${fontStack}`;
-    ctx.fillText(showName || "Show name", rightX, showBaseline);
-    ctx.font = `400 ${showFontSize}px ${fontStack}`;
-    ctx.fillText(formatDateFr(date), rightX, showBaseline + lineHeight);
-    ctx.fillText(time || "", rightX, showBaseline + lineHeight * 2);
-    ctx.textAlign = "left";
-
-    // ---- Logo (bottom-left) ----
-    if (logoEl) {
-      const logoW = w - padX * 2;
-      const logoH = logoW * (logoEl.height / logoEl.width);
-      ctx.drawImage(logoEl, padX, h - logoH - padBottom - contentBottom, logoW, logoH);
-    }
   }, [djName, showName, date, time, genres, format, imgEl, logoEl, dims, FONTS_READY, darkOverlay]);
 
   useEffect(() => { draw(); }, [draw]);
+
+  // Renders a given format off-screen and returns it as a PNG Blob —
+  // used on submit to export all three formats, not just whichever one
+  // is currently shown in the live preview.
+  const renderFormatToBlob = useCallback((fmt) => {
+    const { w, h } = dimsForFormat(fmt);
+    const offscreen = document.createElement("canvas");
+    offscreen.width = w;
+    offscreen.height = h;
+    renderCover(offscreen.getContext("2d"), w, h, fmt, {
+      djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay,
+    });
+    return new Promise((resolve) => offscreen.toBlob(resolve, "image/png"));
+  }, [djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay]);
 
   const handleDownload = () => {
     const canvas = canvasRef.current;
@@ -209,9 +232,21 @@ export default function ShowCoverStudio() {
     if (!canSubmit) return;
     setStatus("submitting");
     try {
-      const [coverImageUrl, audioUrl] = await Promise.all([
+      // Render all three export formats off-screen so Make gets the actual
+      // finished visuals, not just the raw uploaded cover photo.
+      const [storyBlob, tallBlob, squareBlob] = await Promise.all([
+        renderFormatToBlob("story"),
+        renderFormatToBlob("tall"),
+        renderFormatToBlob("square"),
+      ]);
+
+      const slug = (showName || "show").replace(/\s+/g, "_").toLowerCase();
+      const [coverImageUrl, audioUrl, igStoryImageUrl, tallImageUrl, soundcloudImageUrl] = await Promise.all([
         uploadToCloudinary(imgFile, "image"),
         uploadToCloudinary(audioFile, "video"), // Cloudinary uses the "video" resource type for audio files too
+        uploadToCloudinary(new File([storyBlob], `${slug}_story.png`, { type: "image/png" }), "image"),
+        uploadToCloudinary(new File([tallBlob], `${slug}_1080x1440.png`, { type: "image/png" }), "image"),
+        uploadToCloudinary(new File([squareBlob], `${slug}_soundcloud.png`, { type: "image/png" }), "image"),
       ]);
 
       const res = await fetch(MAKE_WEBHOOK_URL, {
@@ -220,6 +255,7 @@ export default function ShowCoverStudio() {
         body: JSON.stringify({
           djName, showName, date, time, genres, igSoundtrack,
           coverImageUrl, audioUrl, audioFileName: audioFile.name,
+          igStoryImageUrl, tallImageUrl, soundcloudImageUrl,
         }),
       });
       if (!res.ok) throw new Error("Webhook rejected the submission");
