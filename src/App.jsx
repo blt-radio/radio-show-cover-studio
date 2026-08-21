@@ -6,7 +6,7 @@ const INK = "#341616";
 const WHITE = "#FFFFFF";
 
 // ---- CONFIGURE THESE THREE VALUES ----
-const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/5g4awnajt7q4iz6hp2i554v4v3364jfc";
+const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/7ty8ba4bkzity9agcsajmn8o3g6axtq6";
 const CLOUDINARY_CLOUD_NAME = "rkk64dqh";
 const CLOUDINARY_UPLOAD_PRESET = "iggjii4o";
 // ---------------------------------------
