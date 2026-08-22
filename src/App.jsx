@@ -12,15 +12,22 @@ const CLOUDINARY_UPLOAD_PRESET = "iggjii4o";
 
 const JINGLE_URL = "https://drive.google.com/drive/folders/1ZCNkK2DDHu0maema4xB-Xd1m74dvZs2M?usp=drive_link";
 
-async function uploadToCloudinary(file, resourceType) {
+async function uploadToCloudinary(file, resourceType, publicId) {
   const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`;
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  if (publicId) formData.append("public_id", publicId);
   const res = await fetch(url, { method: "POST", body: formData });
   if (!res.ok) throw new Error(`Cloudinary upload failed (${resourceType})`);
   const data = await res.json();
   return data.secure_url;
+}
+
+// Filesystem/URL-safe slug: keeps letters, numbers, hyphens and underscores,
+// turns whitespace into underscores, strips everything else.
+function slugify(s) {
+  return (s || "").toString().trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
 }
 
 // Wraps text into lines that each fit within maxWidth, using whatever font
@@ -124,7 +131,7 @@ function renderCover(ctx, w, h, format, state) {
 
   // DJ name — bold, wraps within maxTextWidth
   const djFontSize = 96 * k;
-  const djLineHeight = djFontSize * 1.15;
+  const djLineHeight = djFontSize * 0.87;
   ctx.font = `700 ${djFontSize}px ${fontStack}`;
   const djLines = wrapLines(ctx, djName || "dj name", maxTextWidth);
   ctx.fillStyle = "#FFFFFF";
@@ -219,6 +226,7 @@ export default function ShowCoverStudio() {
   const [errorMessage, setErrorMessage] = useState("");
   const [FONTS_READY, setFontsReady] = useState(false);
   const [darkOverlay, setDarkOverlay] = useState(true);
+  const [convertingImage, setConvertingImage] = useState(false);
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -241,16 +249,38 @@ export default function ShowCoverStudio() {
     img.src = "/logo.svg";
   }, []);
 
-  const handleFile = useCallback((file) => {
-    if (!file || !file.type.startsWith("image/")) return;
-    setImgFile(file);
+  const handleFile = useCallback(async (file) => {
+    if (!file) return;
+    const isHeic = /image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+    // Non-HEIC files must at least look like an image; HEIC files often report
+    // an empty or generic MIME type in the browser, so we allow those through
+    // based on filename instead.
+    if (!isHeic && !file.type.startsWith("image/")) return;
+
+    let workingFile = file;
+    if (isHeic) {
+      setConvertingImage(true);
+      try {
+        const heic2any = (await import("heic2any")).default;
+        const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.92 });
+        const blob = Array.isArray(converted) ? converted[0] : converted;
+        workingFile = new File([blob], file.name.replace(/\.hei[cf]$/i, ".jpg"), { type: "image/jpeg" });
+      } catch (err) {
+        console.error("HEIC conversion failed:", err);
+        setConvertingImage(false);
+        return; // don't set a file we can't actually render
+      }
+      setConvertingImage(false);
+    }
+
+    setImgFile(workingFile);
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => setImgEl(img);
       img.src = e.target.result;
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(workingFile);
   }, []);
 
   const dims = dimsForFormat(format);
@@ -282,8 +312,9 @@ export default function ShowCoverStudio() {
   const handleDownload = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const base = `BLTshow-${slugify(djName) || "artist"}-${date || "date"}`;
     const link = document.createElement("a");
-    link.download = `${(showName || "show").replace(/\s+/g, "_").toLowerCase()}_${format}.png`;
+    link.download = `${base}-${format}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   };
@@ -306,13 +337,13 @@ export default function ShowCoverStudio() {
         renderFormatToBlob("square"),
       ]);
 
-      const slug = (showName || "show").replace(/\s+/g, "_").toLowerCase();
+      const base = `BLTshow-${slugify(djName) || "artist"}-${date || "date"}`;
       const [coverImageUrl, audioUrl, igStoryImageUrl, tallImageUrl, soundcloudImageUrl] = await Promise.all([
-        uploadToCloudinary(imgFile, "image"),
-        uploadToCloudinary(audioFile, "video"),
-        uploadToCloudinary(new File([storyBlob], `${slug}_story.png`, { type: "image/png" }), "image"),
-        uploadToCloudinary(new File([tallBlob], `${slug}_1080x1440.png`, { type: "image/png" }), "image"),
-        uploadToCloudinary(new File([squareBlob], `${slug}_soundcloud.png`, { type: "image/png" }), "image"),
+        uploadToCloudinary(imgFile, "image", `${base}-cover`),
+        uploadToCloudinary(audioFile, "video", `${base}-audio`),
+        uploadToCloudinary(new File([storyBlob], `${base}-story.png`, { type: "image/png" }), "image", `${base}-story`),
+        uploadToCloudinary(new File([tallBlob], `${base}-1440.png`, { type: "image/png" }), "image", `${base}-1440`),
+        uploadToCloudinary(new File([squareBlob], `${base}-soundcloud.png`, { type: "image/png" }), "image", `${base}-soundcloud`),
       ]);
 
       const res = await fetch(MAKE_WEBHOOK_URL, {
@@ -431,9 +462,9 @@ export default function ShowCoverStudio() {
               >
                 <Upload size={18} color={dragOver ? HIGHLIGHT : "rgba(255,255,255,0.5)"} />
                 <span className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>
-                  {imgFile ? imgFile.name : "drag & drop, or click to upload"}
+                  {convertingImage ? "converting HEIC…" : imgFile ? imgFile.name : "drag & drop, or click to upload"}
                 </span>
-                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
+                <input ref={fileInputRef} type="file" accept="image/*,.heic,.heif" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
               </div>
             </div>
 
