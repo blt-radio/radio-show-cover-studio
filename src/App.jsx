@@ -335,12 +335,12 @@ export default function ShowCoverStudio() {
   };
 
   return (
-    <div className="min-h-screen w-full max-w-5xl mx-auto bg-[#341616] text-white p-6 md:p-10" style={{ fontFamily: `"Alte Haas Grotesk", -apple-system, "Helvetica Neue", Arial, sans-serif` }}>
-      <div className="w-full flex items-center justify-between gap-4 mb-8">
-        <a href="https://blt-radio.com/" target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0">
+    <div className="min-h-screen w-full bg-[#341616] text-white p-6 md:p-10" style={{ fontFamily: `"Alte Haas Grotesk", -apple-system, "Helvetica Neue", Arial, sans-serif` }}>
+      <div className="max-w-5xl mx-auto relative mb-8">
+        <a href="https://blt-radio.com/" target="_blank" rel="noopener noreferrer" className="block">
           <img src="/logo.svg" alt="BLT Radio" className="w-full h-auto block" />
         </a>
-        <div className="flex items-center gap-4 shrink-0">
+        <div className="absolute top-0 right-0 flex items-center gap-4">
           <a href="https://www.instagram.com/blt_radio/" target="_blank" rel="noopener noreferrer">
             <img src="/instagram-logo.svg" alt="Instagram" style={{ width: 22, height: 22, filter: "brightness(0) invert(1)" }} />
           </a>
