@@ -3,13 +3,14 @@ import { Upload, Download, Radio, Calendar, Clock, Tag, Disc3, Loader2, CheckCir
 
 const HIGHLIGHT = "#FEBAED";
 const INK = "#341616";
-const WHITE = "#FFFFFF";
 
 // ---- CONFIGURE THESE THREE VALUES ----
 const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/7ty8ba4bkzity9agcsajmn8o3g6axtq6";
 const CLOUDINARY_CLOUD_NAME = "rkk64dqh";
 const CLOUDINARY_UPLOAD_PRESET = "iggjii4o";
 // ---------------------------------------
+
+const JINGLE_URL = "https://drive.google.com/drive/folders/1ZCNkK2DDHu0maema4xB-Xd1m74dvZs2M?usp=drive_link";
 
 async function uploadToCloudinary(file, resourceType) {
   const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`;
@@ -22,8 +23,27 @@ async function uploadToCloudinary(file, resourceType) {
   return data.secure_url;
 }
 
+// Wraps text into lines that each fit within maxWidth, using whatever font
+// is currently set on ctx (caller must set ctx.font before calling this).
+function wrapLines(ctx, text, maxWidth) {
+  const words = String(text).split(" ");
+  const lines = [];
+  let current = "";
+  words.forEach((word) => {
+    const test = current ? current + " " + word : word;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = test;
+    }
+  });
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
+}
+
 function renderCover(ctx, w, h, format, state) {
-  const { djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay } = state;
+  const { djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay, isGuest, hostName } = state;
 
   ctx.fillStyle = INK;
   ctx.fillRect(0, 0, w, h);
@@ -55,6 +75,9 @@ function renderCover(ctx, w, h, format, state) {
   const padX = 40 * k;
   const padTop = 40 * k;
   const padBottom = 40 * k;
+  // Each text column (DJ side / show-info side) is capped at 500px so long
+  // names wrap instead of overlapping the other column.
+  const maxTextWidth = 500 * k;
 
   // The story format (1080x1920) gets equal top/bottom padding so the
   // actual text-to-logo content zone is a consistent 1440px tall, matching
@@ -64,10 +87,6 @@ function renderCover(ctx, w, h, format, state) {
   const contentBottom = storyPad;
 
   // ---- Optional dark gradient overlay behind the top text block ----
-  // Helps text stay legible when the uploaded cover photo is light.
-  // Always anchored to the very top of the canvas (not the padded content
-  // zone), so in the story format it spans the padding *and* into the
-  // text area rather than being offset by it.
   if (darkOverlay) {
     const overlayH = (format === "story" ? 550 : 260) * k;
     const grad = ctx.createLinearGradient(0, 0, 0, overlayH);
@@ -77,49 +96,93 @@ function renderCover(ctx, w, h, format, state) {
     ctx.fillRect(0, 0, w, overlayH);
   }
 
-  // ---- DJ name (top-left) ----
-  const djFontSize = 96 * k;
+  // ======== LEFT COLUMN: (guest / host line) + DJ name + genre pills ========
+  let leftCursor = contentTop + padTop;
+  const topFontSize = 48 * k;
+  const topLineHeight = topFontSize * 1.15;
+
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `700 ${djFontSize}px ${fontStack}`;
-  const djBaseline = contentTop + padTop + djFontSize * 0.78;
-  ctx.fillText(djName || "dj name", padX, djBaseline);
 
-  // ---- Genre pills (below DJ name) ----
+  if (hostName && hostName.trim()) {
+    // "{Host name} invites" — host name bold, "invites" regular, same baseline
+    const baseline = leftCursor + topFontSize * 0.78;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `700 ${topFontSize}px ${fontStack}`;
+    ctx.fillText(hostName.trim(), padX, baseline);
+    const hostW = ctx.measureText(hostName.trim()).width;
+    ctx.font = `400 ${topFontSize}px ${fontStack}`;
+    ctx.fillText(" invites", padX + hostW, baseline);
+    leftCursor += topLineHeight;
+  } else if (isGuest) {
+    const baseline = leftCursor + topFontSize * 0.78;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `400 ${topFontSize}px ${fontStack}`;
+    ctx.fillText("Guest", padX, baseline);
+    leftCursor += topLineHeight;
+  }
+
+  // DJ name — bold, wraps within maxTextWidth
+  const djFontSize = 96 * k;
+  const djLineHeight = djFontSize * 1.15;
+  ctx.font = `700 ${djFontSize}px ${fontStack}`;
+  const djLines = wrapLines(ctx, djName || "dj name", maxTextWidth);
+  ctx.fillStyle = "#FFFFFF";
+  djLines.forEach((line, i) => {
+    const baseline = leftCursor + djFontSize * 0.78 + i * djLineHeight;
+    ctx.fillText(line, padX, baseline);
+  });
+  leftCursor += djLines.length * djLineHeight;
+
+  // Genre pills — up to 10, wrapping onto new rows with a 4px gap on x and y
   const genreFontSize = 32 * k;
-  const genreList = genres.split(",").map((g) => g.trim()).filter(Boolean).slice(0, 4);
-  let cx = padX;
-  const pillY = djBaseline + djFontSize * 0.32;
-  const pillH = genreFontSize + 28 * k;
+  const genreList = genres.split(",").map((g) => g.trim()).filter(Boolean).slice(0, 10);
+  const pillGap = 4 * k;
   const pillPadX = 24 * k;
-  const pillGap = 18 * k;
+  const pillH = genreFontSize + 28 * k;
+  const rightContentEdge = w - padX;
+  let cx = padX;
+  let pillRowY = leftCursor + 24 * k;
   ctx.font = `400 ${genreFontSize}px ${fontStack}`;
   genreList.forEach((g) => {
     const tw = ctx.measureText(g).width + pillPadX * 2;
+    if (cx + tw > rightContentEdge && cx > padX) {
+      cx = padX;
+      pillRowY += pillH + pillGap;
+    }
     ctx.fillStyle = "#FEBAED";
     ctx.beginPath();
-    ctx.rect(cx, pillY, tw, pillH);
+    ctx.rect(cx, pillRowY, tw, pillH);
     ctx.fill();
     ctx.fillStyle = "#111111";
     ctx.textBaseline = "middle";
-    ctx.fillText(g, cx + pillPadX, pillY + pillH / 2 + 1);
+    ctx.fillText(g, cx + pillPadX, pillRowY + pillH / 2 + 1);
     ctx.textBaseline = "alphabetic";
     cx += tw + pillGap;
   });
 
-  // ---- Show name / date / time (top-right, right-aligned) ----
+  // ======== RIGHT COLUMN: show name + date + time ========
+  let rightCursor = contentTop + padTop;
   const showFontSize = 48 * k;
-  const lineHeight = showFontSize * 1.15;
+  const showLineHeight = showFontSize * 1.15;
   ctx.textAlign = "right";
   const rightX = w - padX;
-  ctx.fillStyle = "#FFFFFF";
-  const showBaseline = contentTop + padTop + showFontSize * 0.78;
+
   ctx.font = `700 ${showFontSize}px ${fontStack}`;
-  ctx.fillText(showName || "Show name", rightX, showBaseline);
+  const showLines = wrapLines(ctx, showName || "Show name", maxTextWidth);
+  ctx.fillStyle = "#FFFFFF";
+  showLines.forEach((line, i) => {
+    const baseline = rightCursor + showFontSize * 0.78 + i * showLineHeight;
+    ctx.fillText(line, rightX, baseline);
+  });
+  rightCursor += showLines.length * showLineHeight;
+
   ctx.font = `400 ${showFontSize}px ${fontStack}`;
-  ctx.fillText(formatDateFr(date), rightX, showBaseline + lineHeight);
-  ctx.fillText(time || "", rightX, showBaseline + lineHeight * 2);
+  ctx.fillText(formatDateFr(date), rightX, rightCursor + showFontSize * 0.78);
+  rightCursor += showLineHeight;
+  ctx.fillText(time || "", rightX, rightCursor + showFontSize * 0.78);
+  rightCursor += showLineHeight;
+
   ctx.textAlign = "left";
 
   // ---- Logo (bottom-left) ----
@@ -138,10 +201,14 @@ function dimsForFormat(format) {
 
 export default function ShowCoverStudio() {
   const [djName, setDjName] = useState("");
+  const [isGuest, setIsGuest] = useState(false);
+  const [hostName, setHostName] = useState("");
   const [showName, setShowName] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [genres, setGenres] = useState("");
+  const [igSoundtrack, setIgSoundtrack] = useState("");
+  const [jingleConfirmed, setJingleConfirmed] = useState(false);
   const [format, setFormat] = useState("story");
   const [imgEl, setImgEl] = useState(null);
   const [imgFile, setImgFile] = useState(null);
@@ -149,16 +216,14 @@ export default function ShowCoverStudio() {
   const [audioFile, setAudioFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [status, setStatus] = useState("idle");
+  const [errorMessage, setErrorMessage] = useState("");
   const [FONTS_READY, setFontsReady] = useState(false);
   const [darkOverlay, setDarkOverlay] = useState(true);
-  const [igSoundtrack, setIgSoundtrack] = useState("");
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
   const audioInputRef = useRef(null);
 
-  // Wait for the custom font to actually be loaded before the canvas draws
-  // text with it — canvas doesn't re-flow on late font load like the DOM does.
   useEffect(() => {
     Promise.all([
       document.fonts.load('700 96px "Alte Haas Grotesk"'),
@@ -167,7 +232,7 @@ export default function ShowCoverStudio() {
       document.fonts.load('400 32px "Alte Haas Grotesk"'),
     ])
       .then(() => setFontsReady(true))
-      .catch(() => setFontsReady(false)); // falls back to system font if not installed yet
+      .catch(() => setFontsReady(false));
   }, []);
 
   useEffect(() => {
@@ -197,25 +262,22 @@ export default function ShowCoverStudio() {
     canvas.width = w;
     canvas.height = h;
     renderCover(canvas.getContext("2d"), w, h, format, {
-      djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay,
+      djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay, isGuest, hostName,
     });
-  }, [djName, showName, date, time, genres, format, imgEl, logoEl, dims, FONTS_READY, darkOverlay]);
+  }, [djName, showName, date, time, genres, format, imgEl, logoEl, dims, FONTS_READY, darkOverlay, isGuest, hostName]);
 
   useEffect(() => { draw(); }, [draw]);
 
-  // Renders a given format off-screen and returns it as a PNG Blob —
-  // used on submit to export all three formats, not just whichever one
-  // is currently shown in the live preview.
   const renderFormatToBlob = useCallback((fmt) => {
     const { w, h } = dimsForFormat(fmt);
     const offscreen = document.createElement("canvas");
     offscreen.width = w;
     offscreen.height = h;
     renderCover(offscreen.getContext("2d"), w, h, fmt, {
-      djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay,
+      djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay, isGuest, hostName,
     });
     return new Promise((resolve) => offscreen.toBlob(resolve, "image/png"));
-  }, [djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay]);
+  }, [djName, showName, date, time, genres, imgEl, logoEl, FONTS_READY, darkOverlay, isGuest, hostName]);
 
   const handleDownload = () => {
     const canvas = canvasRef.current;
@@ -230,10 +292,14 @@ export default function ShowCoverStudio() {
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
+    if (!jingleConfirmed) {
+      setStatus("error");
+      setErrorMessage("You need to add the jingle in your sound file before submitting.");
+      return;
+    }
     setStatus("submitting");
+    setErrorMessage("");
     try {
-      // Render all three export formats off-screen so Make gets the actual
-      // finished visuals, not just the raw uploaded cover photo.
       const [storyBlob, tallBlob, squareBlob] = await Promise.all([
         renderFormatToBlob("story"),
         renderFormatToBlob("tall"),
@@ -243,7 +309,7 @@ export default function ShowCoverStudio() {
       const slug = (showName || "show").replace(/\s+/g, "_").toLowerCase();
       const [coverImageUrl, audioUrl, igStoryImageUrl, tallImageUrl, soundcloudImageUrl] = await Promise.all([
         uploadToCloudinary(imgFile, "image"),
-        uploadToCloudinary(audioFile, "video"), // Cloudinary uses the "video" resource type for audio files too
+        uploadToCloudinary(audioFile, "video"),
         uploadToCloudinary(new File([storyBlob], `${slug}_story.png`, { type: "image/png" }), "image"),
         uploadToCloudinary(new File([tallBlob], `${slug}_1080x1440.png`, { type: "image/png" }), "image"),
         uploadToCloudinary(new File([squareBlob], `${slug}_soundcloud.png`, { type: "image/png" }), "image"),
@@ -251,9 +317,10 @@ export default function ShowCoverStudio() {
 
       const res = await fetch(MAKE_WEBHOOK_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // text/plain avoids a CORS preflight; Make still auto-parses JSON regardless of header
+        headers: { "Content-Type": "text/plain;charset=UTF-8" },
         body: JSON.stringify({
-          djName, showName, date, time, genres, igSoundtrack,
+          djName, isGuest, hostName, showName, date, time, genres, igSoundtrack,
           coverImageUrl, audioUrl, audioFileName: audioFile.name,
           igStoryImageUrl, tallImageUrl, soundcloudImageUrl,
         }),
@@ -263,11 +330,26 @@ export default function ShowCoverStudio() {
     } catch (err) {
       console.error(err);
       setStatus("error");
+      setErrorMessage("Something went wrong — check the console and your webhook/Cloudinary config.");
     }
   };
 
   return (
     <div className="min-h-screen w-full bg-[#341616] text-white p-6 md:p-10" style={{ fontFamily: `"Alte Haas Grotesk", -apple-system, "Helvetica Neue", Arial, sans-serif` }}>
+      <div className="w-full flex items-center justify-between gap-4 mb-8">
+        <a href="https://blt-radio.com/" target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0">
+          <img src="/logo.svg" alt="BLT Radio" className="w-full h-auto block" />
+        </a>
+        <div className="flex items-center gap-4 shrink-0">
+          <a href="https://www.instagram.com/blt_radio/" target="_blank" rel="noopener noreferrer">
+            <img src="/instagram-logo.svg" alt="Instagram" style={{ width: 22, height: 22, filter: "brightness(0) invert(1)" }} />
+          </a>
+          <a href="https://soundcloud.com/blt-radio" target="_blank" rel="noopener noreferrer">
+            <img src="/soundcloud-logo.svg" alt="SoundCloud" style={{ width: 22, height: 22, filter: "brightness(0) invert(1)" }} />
+          </a>
+        </div>
+      </div>
+
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center gap-2 mb-1">
           <Radio size={20} color={HIGHLIGHT} />
@@ -279,8 +361,32 @@ export default function ShowCoverStudio() {
 
         <div className="grid md:grid-cols-2 gap-8">
           <div className="space-y-5">
-            <Field label="DJ name" icon={<Disc3 size={14} />}>
-              <input className="input" value={djName} onChange={(e) => setDjName(e.target.value)} placeholder="DJ Nova" />
+            <div className="flex gap-3 items-end">
+              <div className="flex-1">
+                <Field label="DJ name" icon={<Disc3 size={14} />}>
+                  <input className="input" value={djName} onChange={(e) => setDjName(e.target.value)} placeholder="DJ Nova" />
+                </Field>
+              </div>
+              <div>
+                <label className="label mb-1.5 block">Guest</label>
+                <div className="flex border" style={{ borderColor: "rgba(255,255,255,0.15)" }}>
+                  {[{ id: false, label: "No" }, { id: true, label: "Yes" }].map((opt) => (
+                    <button
+                      key={String(opt.id)}
+                      type="button"
+                      onClick={() => setIsGuest(opt.id)}
+                      className="px-3 py-2.5 text-xs transition-colors"
+                      style={{ background: isGuest === opt.id ? HIGHLIGHT : "transparent", color: isGuest === opt.id ? INK : "rgba(255,255,255,0.6)" }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <Field label="IF invitation:">
+              <input className="input" value={hostName} onChange={(e) => setHostName(e.target.value)} placeholder="Host name (optional)" />
             </Field>
 
             <Field label="Show name">
@@ -288,15 +394,19 @@ export default function ShowCoverStudio() {
             </Field>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Air date" icon={<Calendar size={14} />}>
-                <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
-              </Field>
-              <Field label="Air time" icon={<Clock size={14} />}>
-                <input type="time" className="input" value={time} onChange={(e) => setTime(e.target.value)} />
-              </Field>
+              <div className="min-w-0">
+                <Field label="Air date" icon={<Calendar size={14} />}>
+                  <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+                </Field>
+              </div>
+              <div className="min-w-0">
+                <Field label="Air time" icon={<Clock size={14} />}>
+                  <input type="time" className="input" value={time} onChange={(e) => setTime(e.target.value)} />
+                </Field>
+              </div>
             </div>
 
-            <Field label="Genres (comma-separated)" icon={<Tag size={14} />}>
+            <Field label="Genres (comma-separated, up to 10)" icon={<Tag size={14} />}>
               <input className="input" value={genres} onChange={(e) => setGenres(e.target.value)} placeholder="deep house, techno" />
             </Field>
 
@@ -342,6 +452,26 @@ export default function ShowCoverStudio() {
               </div>
             </div>
 
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={jingleConfirmed}
+                onChange={(e) => setJingleConfirmed(e.target.checked)}
+                className="mt-1 accent-[#FEBAED]"
+              />
+              <span className="text-sm" style={{ color: "rgba(255,255,255,0.75)" }}>
+                I added the BLT{" "}
+                <a href={JINGLE_URL} target="_blank" rel="noopener noreferrer" className="font-bold underline" style={{ color: HIGHLIGHT }}>
+                  jingle
+                </a>{" "}
+                in my show audio file
+              </span>
+            </label>
+
+            <p className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>
+              Download your visuals now so you can post your recap on instagram!
+            </p>
+
             <button
               onClick={handleSubmit}
               disabled={!canSubmit}
@@ -353,7 +483,7 @@ export default function ShowCoverStudio() {
               {status === "submitting" ? "Uploading…" : status === "done" ? "Submitted!" : "Submit show"}
             </button>
             {status === "error" && (
-              <p className="text-xs" style={{ color: "#e07a5f" }}>Something went wrong — check the console and your webhook/Cloudinary config.</p>
+              <p className="text-xs" style={{ color: "#e07a5f" }}>{errorMessage}</p>
             )}
           </div>
 
@@ -428,7 +558,6 @@ function formatDateFr(d) {
   if (!d) return "";
   const date = new Date(d + "T00:00:00");
   if (isNaN(date)) return d;
-  // "Dimanche 9 août" — capitalized weekday, day number, lowercase month, no year (matches template)
   const formatted = date.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
   return formatted.charAt(0).toUpperCase() + formatted.slice(1);
 }
