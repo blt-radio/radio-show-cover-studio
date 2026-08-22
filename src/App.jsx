@@ -335,7 +335,7 @@ export default function ShowCoverStudio() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#341616] text-white p-6 md:p-10" style={{ fontFamily: `"Alte Haas Grotesk", -apple-system, "Helvetica Neue", Arial, sans-serif` }}>
+    <div className="min-h-screen w-full max-w-5xl mx-auto bg-[#341616] text-white p-6 md:p-10" style={{ fontFamily: `"Alte Haas Grotesk", -apple-system, "Helvetica Neue", Arial, sans-serif` }}>
       <div className="w-full flex items-center justify-between gap-4 mb-8">
         <a href="https://blt-radio.com/" target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0">
           <img src="/logo.svg" alt="BLT Radio" className="w-full h-auto block" />
