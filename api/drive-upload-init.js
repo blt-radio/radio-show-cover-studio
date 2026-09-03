@@ -41,9 +41,11 @@ export default async function handler(req, res) {
     const uploadUrl = initRes.headers.get("location");
     if (!uploadUrl) throw new Error("Drive did not return a session URL");
 
-    // accessToken is scoped to drive.file only and is actively revoked by the
-    // browser (via /api/drive-revoke) the moment this one upload finishes.
-    res.status(200).json({ uploadUrl, accessToken });
+    // Only the upload session URL goes to the browser now — the access
+    // token itself stays entirely server-side (see drive-upload-chunk.js),
+    // which also sidesteps the CORS restriction on direct browser-to-Google
+    // requests authenticated with a service account.
+    res.status(200).json({ uploadUrl });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || "Unknown server error" });

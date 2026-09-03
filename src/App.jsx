@@ -5,12 +5,12 @@ const HIGHLIGHT = "#FEBAED";
 const INK = "#341616";
 
 // ---- CONFIGURE THESE VALUES ----
-const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/7ty8ba4bkzity9agcsajmn8o3g6axtq6";
+const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/REPLACE_WITH_YOUR_WEBHOOK_ID";
 // Sent as a header on every /api call. Must match APP_UPLOAD_SECRET in Vercel's
 // env vars. NOTE: since this is a static site, this string is visible to
 // anyone who inspects the compiled JS — it's a speed bump against casual
 // discovery of the endpoint, not a cryptographic secret.
-const APP_SECRET = "le25juin1999puisle6aout1999puisle18janvier2000sontnesles3bombesquiontfondecetteradio";
+const APP_SECRET = "REPLACE_WITH_YOUR_SHARED_SECRET";
 // ---------------------------------
 
 const JINGLE_URL = "https://drive.google.com/drive/folders/1ZCNkK2DDHu0maema4xB-Xd1m74dvZs2M?usp=drive_link";
@@ -50,9 +50,13 @@ async function getOrCreateShowFolder(folderName) {
   return folderId;
 }
 
-// Uploads a single file directly from the browser to Google Drive, into an
-// already-known folder. Never touches Vercel's or Cloudinary's size limits —
-// the browser talks straight to Google.
+// Uploads a single file to Google Drive, into an already-known folder, by
+// relaying it in small pieces through this app's own /api/drive-upload-chunk
+// endpoint — the browser never talks to Google directly (Google's CORS
+// policy doesn't allow browser-authenticated service-account requests, so a
+// direct upload isn't possible), and the access token never leaves the server.
+const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB — comfortably under Vercel's ~4.5MB function payload cap
+
 async function uploadFileToDrive(file, folderId) {
   const initRes = await fetch("/api/drive-upload-init", {
     method: "POST",
@@ -67,31 +71,40 @@ async function uploadFileToDrive(file, folderId) {
     const errData = await initRes.json().catch(() => ({}));
     throw new Error(errData.error || `Drive upload init failed (HTTP ${initRes.status})`);
   }
-  const { uploadUrl, accessToken } = await initRes.json();
+  const { uploadUrl } = await initRes.json();
 
-  const putRes = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": file.type || "application/octet-stream",
-    },
-    body: file,
-  });
-  if (!putRes.ok) {
-    throw new Error(`Drive upload failed (${file.name}): ${await putRes.text()}`);
+  const total = file.size;
+  let start = 0;
+  let result = null;
+
+  while (start < total) {
+    const end = Math.min(start + CHUNK_SIZE, total);
+    const chunk = file.slice(start, end);
+    const chunkRes = await fetch("/api/drive-upload-chunk", {
+      method: "POST",
+      headers: {
+        ...apiHeaders(),
+        "Content-Type": "application/octet-stream",
+        "x-upload-url": uploadUrl,
+        "x-range-start": String(start),
+        "x-range-end": String(end - 1),
+        "x-total-size": String(total),
+      },
+      body: chunk,
+    });
+    if (!chunkRes.ok) {
+      const errData = await chunkRes.json().catch(() => ({}));
+      throw new Error(errData.error || `Drive chunk upload failed (${file.name}, HTTP ${chunkRes.status})`);
+    }
+    const data = await chunkRes.json();
+    if (data.done) result = data;
+    start = end;
   }
-  const data = await putRes.json();
 
-  // Best-effort immediate revoke — this token has done its one job now.
-  fetch("/api/drive-revoke", {
-    method: "POST",
-    headers: apiHeaders(),
-    body: JSON.stringify({ accessToken }),
-  }).catch(() => {});
-
+  if (!result) throw new Error(`Drive upload did not complete (${file.name})`);
   return {
-    fileId: data.id,
-    url: data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`,
+    fileId: result.id,
+    url: result.webViewLink || `https://drive.google.com/file/d/${result.id}/view`,
   };
 }
 
