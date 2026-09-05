@@ -615,7 +615,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
       video.play().catch(() => {});
       rafRef.current = requestAnimationFrame(loop);
     } else {
-      renderVideoFrame(ctx, W, H, null, stateRef.current);
+      renderVideoFrame(ctx, W, H, null, overlayVideoElRef.current, stateRef.current);
     }
     return () => {
       active = false;
