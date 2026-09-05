@@ -253,7 +253,7 @@ function renderCover(ctx, w, h, format, state) {
   // Genre pills — up to 10, wrapping onto new rows with a 4px gap on x and y
   const genreFontSize = 32 * k;
   const genreList = genres.split(",").map((g) => g.trim()).filter(Boolean).slice(0, 10);
-  const pillGap = 4 * k;
+  const pillGap = 8 * k;
   const pillPadX = 24 * k;
   const pillH = genreFontSize + 28 * k;
   const rightContentEdge = w - padX;
@@ -337,9 +337,11 @@ function renderTextCard(ctx, w, h, { imgEl, text, pinkText, pinkSize, bodySize, 
   const k = w / 1080;
   const fontStack = fontStackFor(FONTS_READY);
   const margin = 40 * k;
-  const pad = 24 * k;
+  const bodyPad = 24 * k; // brown box: 24px padding on all sides
+  const pinkPadX = 24 * k; // pink label: 24px sides
+  const pinkPadY = 12 * k; // pink label: 12px top/bottom
   const stackWidth = w - margin * 2;
-  const innerWidth = stackWidth - pad * 2;
+  const innerWidth = stackWidth - bodyPad * 2;
 
   const pinkFontPx = pinkSize * k;
   const bodyFontPx = bodySize * k;
@@ -347,8 +349,12 @@ function renderTextCard(ctx, w, h, { imgEl, text, pinkText, pinkSize, bodySize, 
 
   ctx.font = `400 ${bodyFontPx}px ${fontStack}`;
   const bodyLines = wrapLines(ctx, text || "", innerWidth);
-  const bodyBlockHeight = pad * 2 + bodyLines.length * bodyLineHeight;
-  const pinkBlockHeight = pad * 2 + pinkFontPx * 1.2;
+  const bodyBlockHeight = bodyPad * 2 + bodyLines.length * bodyLineHeight;
+
+  ctx.font = `400 ${pinkFontPx}px ${fontStack}`;
+  const pinkTextWidth = ctx.measureText(pinkText).width;
+  const pinkBlockWidth = pinkTextWidth + pinkPadX * 2;
+  const pinkBlockHeight = pinkPadY * 2 + pinkFontPx * 1.2;
 
   const stackTotalHeight = pinkBlockHeight + bodyBlockHeight;
   const stackBottom = h - margin;
@@ -357,11 +363,12 @@ function renderTextCard(ctx, w, h, { imgEl, text, pinkText, pinkSize, bodySize, 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 
+  // Pink label — hugs the text width, doesn't span the full stack width
   ctx.fillStyle = "#FEBAED";
-  ctx.fillRect(margin, stackTop, stackWidth, pinkBlockHeight);
+  ctx.fillRect(margin, stackTop, pinkBlockWidth, pinkBlockHeight);
   ctx.fillStyle = "#111111";
   ctx.font = `400 ${pinkFontPx}px ${fontStack}`;
-  ctx.fillText(pinkText, margin + pad, stackTop + pad + pinkFontPx * 0.78);
+  ctx.fillText(pinkText, margin + pinkPadX, stackTop + pinkPadY + pinkFontPx * 0.78);
 
   const brownTop = stackTop + pinkBlockHeight;
   ctx.fillStyle = INK;
@@ -369,14 +376,14 @@ function renderTextCard(ctx, w, h, { imgEl, text, pinkText, pinkSize, bodySize, 
   ctx.fillStyle = "#FFFFFF";
   ctx.font = `400 ${bodyFontPx}px ${fontStack}`;
   bodyLines.forEach((line, i) => {
-    ctx.fillText(line, margin + pad, brownTop + pad + bodyFontPx * 0.78 + i * bodyLineHeight);
+    ctx.fillText(line, margin + bodyPad, brownTop + bodyPad + bodyFontPx * 0.78 + i * bodyLineHeight);
   });
 }
 
 // ============================================================
 // Recap video-card frame renderer ("timestamp" cards)
 // ============================================================
-function renderVideoFrame(ctx, w, h, video, state) {
+function renderVideoFrame(ctx, w, h, video, overlayVideo, state) {
   const { hostName, djName, showName, timestamp, date, FONTS_READY } = state;
 
   ctx.fillStyle = INK;
@@ -392,6 +399,13 @@ function renderVideoFrame(ctx, w, h, video, state) {
     ctx.font = `${Math.round(w * 0.04)}px sans-serif`;
     ctx.textAlign = "center";
     ctx.fillText("upload a video", w / 2, h / 2);
+  }
+
+  // DVD-logo overlay, drawn full-frame on top of the uploaded video — its
+  // WebM/VP9 alpha channel means only the actual logo pixels are opaque,
+  // everything else stays transparent and lets the video underneath show through.
+  if (overlayVideo && overlayVideo.readyState >= 2 && overlayVideo.videoWidth) {
+    ctx.drawImage(overlayVideo, 0, 0, w, h);
   }
 
   const k = w / 1080;
@@ -502,41 +516,41 @@ const TextRecapCard = forwardRef(function TextRecapCard(
   return (
     <div className="border-t pt-5" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
       <label className="label mb-2 block">{title}</label>
-      <div className="grid sm:grid-cols-2 gap-3">
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          className="cursor-pointer border border-dashed flex items-center justify-center py-8 px-2 text-center"
-          style={{ borderColor: "rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.03)" }}
-        >
-          <span className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
-            {imgFile ? imgFile.name : "upload image"}
-          </span>
-          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="space-y-3">
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="cursor-pointer border border-dashed flex items-center justify-center py-8 px-2 text-center"
+            style={{ borderColor: "rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.03)" }}
+          >
+            <span className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
+              {imgFile ? imgFile.name : "upload image"}
+            </span>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
+          </div>
+          <textarea
+            className="input"
+            rows={4}
+            maxLength={maxChars || undefined}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Text..."
+          />
+          {maxChars ? (
+            <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{text.length}/{maxChars}</p>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border transition-colors hover:opacity-80"
+            style={{ borderColor: HIGHLIGHT, color: HIGHLIGHT }}
+          >
+            <Download size={13} /> download image
+          </button>
         </div>
-        <textarea
-          className="input"
-          rows={4}
-          maxLength={maxChars || undefined}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Text..."
-        />
-      </div>
-      {maxChars ? (
-        <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>{text.length}/{maxChars}</p>
-      ) : null}
-      <div className="mt-3 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 border transition-colors hover:opacity-80"
-          style={{ borderColor: HIGHLIGHT, color: HIGHLIGHT }}
-        >
-          <Download size={13} /> download image
-        </button>
-      </div>
-      <div className="overflow-hidden border mt-3 max-w-[220px]" style={{ borderColor: "rgba(255,255,255,0.12)" }}>
-        <canvas ref={canvasRef} className="w-full h-auto block" style={{ aspectRatio: `${W} / ${H}` }} />
+        <div className="overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.12)" }}>
+          <canvas ref={canvasRef} className="w-full h-auto block" style={{ aspectRatio: `${W} / ${H}` }} />
+        </div>
       </div>
     </div>
   );
@@ -552,6 +566,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
   const [exporting, setExporting] = useState(false);
   const canvasRef = useRef(null);
   const videoElRef = useRef(null);
+  const overlayVideoElRef = useRef(null);
   const fileInputRef = useRef(null);
   const rafRef = useRef(null);
   const stateRef = useRef({});
@@ -560,6 +575,17 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
   useEffect(() => {
     stateRef.current = { hostName, djName, showName, date, timestamp, FONTS_READY };
   }, [hostName, djName, showName, date, timestamp, FONTS_READY]);
+
+  // Start the DVD-logo overlay looping as soon as the component mounts, so
+  // it's always ready alongside whichever video the DJ uploads.
+  useEffect(() => {
+    const overlay = overlayVideoElRef.current;
+    if (!overlay) return;
+    overlay.muted = true;
+    overlay.loop = true;
+    overlay.playsInline = true;
+    overlay.play().catch(() => {});
+  }, []);
 
   const handleFile = (file) => {
     if (!file || !file.type.startsWith("video/")) return;
@@ -578,7 +604,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
 
     function loop() {
       if (!active) return;
-      renderVideoFrame(ctx, W, H, video, stateRef.current);
+      renderVideoFrame(ctx, W, H, video, overlayVideoElRef.current, stateRef.current);
       rafRef.current = requestAnimationFrame(loop);
     }
 
@@ -600,7 +626,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
   useEffect(() => {
     if (!videoUrl) {
       const canvas = canvasRef.current;
-      if (canvas) renderVideoFrame(canvas.getContext("2d"), W, H, null, stateRef.current);
+      if (canvas) renderVideoFrame(canvas.getContext("2d"), W, H, null, overlayVideoElRef.current, stateRef.current);
     }
   }, [hostName, djName, showName, date, timestamp, FONTS_READY, videoUrl]);
 
@@ -628,6 +654,14 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
     video.loop = true;
     await video.play().catch(() => {});
 
+    const overlay = overlayVideoElRef.current;
+    if (overlay) {
+      overlay.currentTime = 0;
+      overlay.muted = true;
+      overlay.loop = true;
+      await overlay.play().catch(() => {});
+    }
+
     const DURATION_MS = 20000;
     const startTime = performance.now();
     recorder.start();
@@ -635,7 +669,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
     await new Promise((resolve) => {
       function frameLoop() {
         const elapsed = performance.now() - startTime;
-        renderVideoFrame(ctx, W, H, video, stateRef.current);
+        renderVideoFrame(ctx, W, H, video, overlayVideoElRef.current, stateRef.current);
         if (elapsed < DURATION_MS) {
           requestAnimationFrame(frameLoop);
         } else {
@@ -675,36 +709,37 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
   return (
     <div className="border-t pt-5" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
       <label className="label mb-2 block">{label}</label>
-      <div className="grid sm:grid-cols-2 gap-3">
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          className="cursor-pointer border border-dashed flex items-center justify-center py-8 px-2 text-center"
-          style={{ borderColor: "rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.03)" }}
-        >
-          <span className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
-            {videoFile ? videoFile.name : "upload video"}
-          </span>
-          <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="space-y-3">
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="cursor-pointer border border-dashed flex items-center justify-center py-8 px-2 text-center"
+            style={{ borderColor: "rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.03)" }}
+          >
+            <span className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
+              {videoFile ? videoFile.name : "upload video"}
+            </span>
+            <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
+          </div>
+          <Field label="Timestamp">
+            <input className="input" value={timestamp} onChange={(e) => setTimestamp(e.target.value)} placeholder="e.g. 01:23:45" />
+          </Field>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={exporting || !videoFile}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border transition-colors hover:opacity-80 disabled:opacity-40"
+            style={{ borderColor: HIGHLIGHT, color: HIGHLIGHT }}
+          >
+            {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+            {exporting ? "processing (~20s)…" : "download video"}
+          </button>
+          <video ref={videoElRef} src={videoUrl || undefined} className="hidden" playsInline muted />
+          <video ref={overlayVideoElRef} src="/dvd-overlay.webm" className="hidden" playsInline muted loop />
         </div>
-        <Field label="Timestamp">
-          <input className="input" value={timestamp} onChange={(e) => setTimestamp(e.target.value)} placeholder="e.g. 01:23:45" />
-        </Field>
-      </div>
-      <div className="mt-3">
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={exporting || !videoFile}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 border transition-colors hover:opacity-80 disabled:opacity-40"
-          style={{ borderColor: HIGHLIGHT, color: HIGHLIGHT }}
-        >
-          {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-          {exporting ? "processing (~20s)…" : "download video"}
-        </button>
-      </div>
-      <video ref={videoElRef} src={videoUrl || undefined} className="hidden" playsInline muted />
-      <div className="overflow-hidden border mt-3 max-w-[220px]" style={{ borderColor: "rgba(255,255,255,0.12)" }}>
-        <canvas ref={canvasRef} className="w-full h-auto block" style={{ aspectRatio: `${W} / ${H}` }} />
+        <div className="overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.12)" }}>
+          <canvas ref={canvasRef} className="w-full h-auto block" style={{ aspectRatio: `${W} / ${H}` }} />
+        </div>
       </div>
     </div>
   );
@@ -1082,20 +1117,9 @@ export default function ShowCoverStudio() {
             </div>
 
             {wantsRecap && (
-              <div className="space-y-5">
-                <p className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
-                  Fill in whichever recap visuals you want — none are required. The four "timestamp" videos each take about 20 seconds to process when you download them or submit, so keep this tab open.
-                </p>
-                {(isGuest || hostName.trim()) && (
-                  <TextRecapCard ref={recap1Ref} title="Who's playing" pinkText="On écoute qui ?" pinkSize={32} bodySize={36} maxChars={600} FONTS_READY={FONTS_READY} />
-                )}
-                <TextRecapCard ref={recap2Ref} title="What's playing" pinkText="On écoute quoi ?" pinkSize={32} bodySize={36} maxChars={600} FONTS_READY={FONTS_READY} />
-                <TextRecapCard ref={recap3Ref} title="Tracklist (optional)" pinkText="Tracklist" pinkSize={32} bodySize={32} maxChars={null} FONTS_READY={FONTS_READY} />
-                <TimestampRecapCard ref={recap4Ref} label="Timestamp clip 1" hostName={hostName} djName={djName} showName={showName} date={date} FONTS_READY={FONTS_READY} />
-                <TimestampRecapCard ref={recap5Ref} label="Timestamp clip 2" hostName={hostName} djName={djName} showName={showName} date={date} FONTS_READY={FONTS_READY} />
-                <TimestampRecapCard ref={recap6Ref} label="Timestamp clip 3" hostName={hostName} djName={djName} showName={showName} date={date} FONTS_READY={FONTS_READY} />
-                <TimestampRecapCard ref={recap7Ref} label="Timestamp clip 4" hostName={hostName} djName={djName} showName={showName} date={date} FONTS_READY={FONTS_READY} />
-              </div>
+              <p className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
+                Fill in whichever recap visuals you want below — none are required.
+              </p>
             )}
 
             <p className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>
@@ -1164,6 +1188,23 @@ export default function ShowCoverStudio() {
             </p>
           </div>
         </div>
+
+        {wantsRecap && (
+          <div className="space-y-8 mt-4">
+            <p className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
+              The four "timestamp" videos each take about 20 seconds to process when you download them or submit, so keep this tab open.
+            </p>
+            {(isGuest || hostName.trim()) && (
+              <TextRecapCard ref={recap1Ref} title="Who's playing" pinkText="On écoute qui ?" pinkSize={32} bodySize={36} maxChars={600} FONTS_READY={FONTS_READY} />
+            )}
+            <TextRecapCard ref={recap2Ref} title="What's playing" pinkText="On écoute quoi ?" pinkSize={32} bodySize={36} maxChars={600} FONTS_READY={FONTS_READY} />
+            <TextRecapCard ref={recap3Ref} title="Tracklist (optional)" pinkText="Tracklist" pinkSize={32} bodySize={32} maxChars={null} FONTS_READY={FONTS_READY} />
+            <TimestampRecapCard ref={recap4Ref} label="Timestamp clip 1" hostName={hostName} djName={djName} showName={showName} date={date} FONTS_READY={FONTS_READY} />
+            <TimestampRecapCard ref={recap5Ref} label="Timestamp clip 2" hostName={hostName} djName={djName} showName={showName} date={date} FONTS_READY={FONTS_READY} />
+            <TimestampRecapCard ref={recap6Ref} label="Timestamp clip 3" hostName={hostName} djName={djName} showName={showName} date={date} FONTS_READY={FONTS_READY} />
+            <TimestampRecapCard ref={recap7Ref} label="Timestamp clip 4" hostName={hostName} djName={djName} showName={showName} date={date} FONTS_READY={FONTS_READY} />
+          </div>
+        )}
       </div>
 
       <style>{`
