@@ -50,13 +50,9 @@ async function getOrCreateShowFolder(folderName) {
   return folderId;
 }
 
-// Uploads a single file to Google Drive, into an already-known folder, by
-// relaying it in small pieces through this app's own /api/drive-upload-chunk
-// endpoint — the browser never talks to Google directly (Google's CORS
-// policy doesn't allow browser-authenticated service-account requests, so a
-// direct upload isn't possible), and the access token never leaves the server.
-const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB — comfortably under Vercel's ~4.5MB function payload cap
-
+// Uploads a single file directly from the browser to Google Drive, into an
+// already-known folder. Never touches Vercel's or Cloudinary's size limits —
+// the browser talks straight to Google.
 async function uploadFileToDrive(file, folderId) {
   const initRes = await fetch("/api/drive-upload-init", {
     method: "POST",
@@ -71,40 +67,31 @@ async function uploadFileToDrive(file, folderId) {
     const errData = await initRes.json().catch(() => ({}));
     throw new Error(errData.error || `Drive upload init failed (HTTP ${initRes.status})`);
   }
-  const { uploadUrl } = await initRes.json();
+  const { uploadUrl, accessToken } = await initRes.json();
 
-  const total = file.size;
-  let start = 0;
-  let result = null;
-
-  while (start < total) {
-    const end = Math.min(start + CHUNK_SIZE, total);
-    const chunk = file.slice(start, end);
-    const chunkRes = await fetch("/api/drive-upload-chunk", {
-      method: "POST",
-      headers: {
-        ...apiHeaders(),
-        "Content-Type": "application/octet-stream",
-        "x-upload-url": uploadUrl,
-        "x-range-start": String(start),
-        "x-range-end": String(end - 1),
-        "x-total-size": String(total),
-      },
-      body: chunk,
-    });
-    if (!chunkRes.ok) {
-      const errData = await chunkRes.json().catch(() => ({}));
-      throw new Error(errData.error || `Drive chunk upload failed (${file.name}, HTTP ${chunkRes.status})`);
-    }
-    const data = await chunkRes.json();
-    if (data.done) result = data;
-    start = end;
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+  if (!putRes.ok) {
+    throw new Error(`Drive upload failed (${file.name}): ${await putRes.text()}`);
   }
+  const data = await putRes.json();
 
-  if (!result) throw new Error(`Drive upload did not complete (${file.name})`);
+  // Best-effort immediate revoke — this token has done its one job now.
+  fetch("/api/drive-revoke", {
+    method: "POST",
+    headers: apiHeaders(),
+    body: JSON.stringify({ accessToken }),
+  }).catch(() => {});
+
   return {
-    fileId: result.id,
-    url: result.webViewLink || `https://drive.google.com/file/d/${result.id}/view`,
+    fileId: data.id,
+    url: data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`,
   };
 }
 
