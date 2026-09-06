@@ -5,7 +5,7 @@ const HIGHLIGHT = "#FEBAED";
 const INK = "#341616";
 
 // ---- CONFIGURE THESE VALUES ----
-const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/d2ufu9rutv9qfvbri6kp8l9s8abppt9d";
+const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/7ty8ba4bkzity9agcsajmn8o3g6axtq6";
 // Sent as a header on every /api call. Must match APP_UPLOAD_SECRET in Vercel's
 // env vars. NOTE: since this is a static site, this string is visible to
 // anyone who inspects the compiled JS — it's a speed bump against casual
