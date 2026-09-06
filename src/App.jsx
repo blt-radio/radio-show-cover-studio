@@ -256,7 +256,7 @@ function renderCover(ctx, w, h, format, state) {
   const pillGap = 8 * k;
   const pillPadX = 24 * k;
   const pillH = genreFontSize + 28 * k;
-  const rightContentEdge = w - padX;
+  const rightContentEdge = padX + maxTextWidth;
   let cx = padX;
   let pillRowY = leftCursor + 24 * k;
   ctx.font = `400 ${genreFontSize}px ${fontStack}`;
@@ -337,11 +337,14 @@ function renderTextCard(ctx, w, h, { imgEl, text, pinkText, pinkSize, bodySize, 
   const k = w / 1080;
   const fontStack = fontStackFor(FONTS_READY);
   const margin = 40 * k;
-  const bodyPad = 24 * k; // brown box: 24px padding on all sides
+  const bodyPadTop = 32 * k; // brown box: 24px + 8px extra top for optical centering
+  const bodyPadBottom = 24 * k;
+  const bodyPadX = 24 * k;
   const pinkPadX = 24 * k; // pink label: 24px sides
-  const pinkPadY = 12 * k; // pink label: 12px top/bottom
+  const pinkPadTop = 20 * k; // pink label: 12px + 8px extra top for optical centering
+  const pinkPadBottom = 12 * k;
   const stackWidth = w - margin * 2;
-  const innerWidth = stackWidth - bodyPad * 2;
+  const innerWidth = stackWidth - bodyPadX * 2;
 
   const pinkFontPx = pinkSize * k;
   const bodyFontPx = bodySize * k;
@@ -349,12 +352,12 @@ function renderTextCard(ctx, w, h, { imgEl, text, pinkText, pinkSize, bodySize, 
 
   ctx.font = `400 ${bodyFontPx}px ${fontStack}`;
   const bodyLines = wrapLines(ctx, text || "", innerWidth);
-  const bodyBlockHeight = bodyPad * 2 + bodyLines.length * bodyLineHeight;
+  const bodyBlockHeight = bodyPadTop + bodyPadBottom + bodyLines.length * bodyLineHeight;
 
   ctx.font = `400 ${pinkFontPx}px ${fontStack}`;
   const pinkTextWidth = ctx.measureText(pinkText).width;
   const pinkBlockWidth = pinkTextWidth + pinkPadX * 2;
-  const pinkBlockHeight = pinkPadY * 2 + pinkFontPx * 1.2;
+  const pinkBlockHeight = pinkPadTop + pinkPadBottom + pinkFontPx * 1.2;
 
   const stackTotalHeight = pinkBlockHeight + bodyBlockHeight;
   const stackBottom = h - margin;
@@ -368,7 +371,7 @@ function renderTextCard(ctx, w, h, { imgEl, text, pinkText, pinkSize, bodySize, 
   ctx.fillRect(margin, stackTop, pinkBlockWidth, pinkBlockHeight);
   ctx.fillStyle = "#111111";
   ctx.font = `400 ${pinkFontPx}px ${fontStack}`;
-  ctx.fillText(pinkText, margin + pinkPadX, stackTop + pinkPadY + pinkFontPx * 0.78);
+  ctx.fillText(pinkText, margin + pinkPadX, stackTop + pinkPadTop + pinkFontPx * 0.78);
 
   const brownTop = stackTop + pinkBlockHeight;
   ctx.fillStyle = INK;
@@ -376,7 +379,7 @@ function renderTextCard(ctx, w, h, { imgEl, text, pinkText, pinkSize, bodySize, 
   ctx.fillStyle = "#FFFFFF";
   ctx.font = `400 ${bodyFontPx}px ${fontStack}`;
   bodyLines.forEach((line, i) => {
-    ctx.fillText(line, margin + bodyPad, brownTop + bodyPad + bodyFontPx * 0.78 + i * bodyLineHeight);
+    ctx.fillText(line, margin + bodyPadX, brownTop + bodyPadTop + bodyFontPx * 0.78 + i * bodyLineHeight);
   });
 }
 
@@ -711,6 +714,13 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
       <label className="label mb-2 block">{label}</label>
       <div className="grid md:grid-cols-2 gap-6">
         <div className="space-y-3">
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
+            If you have images, you can use the webtool{" "}
+            <a href="https://imagefragmenter.app/" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: HIGHLIGHT }}>
+              imagefragmenter.app
+            </a>{" "}
+            to turn them into videos !!
+          </p>
           <div
             onClick={() => fileInputRef.current?.click()}
             className="cursor-pointer border border-dashed flex items-center justify-center py-8 px-2 text-center"
@@ -1121,24 +1131,6 @@ export default function ShowCoverStudio() {
                 Fill in whichever recap visuals you want below — none are required.
               </p>
             )}
-
-            <p className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>
-              Download your visuals now so you can post your recap on instagram!
-            </p>
-
-            <button
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className="w-full flex items-center justify-center gap-2 py-3 text-sm uppercase tracking-wide transition-opacity disabled:opacity-40"
-              style={{ background: HIGHLIGHT, color: INK }}
-            >
-              {status === "submitting" && <Loader2 size={16} className="animate-spin" />}
-              {status === "done" && <CheckCircle2 size={16} />}
-              {status === "submitting" ? "Uploading…" : status === "done" ? "Submitted!" : "Submit show"}
-            </button>
-            {status === "error" && (
-              <p className="text-xs" style={{ color: "#e07a5f" }}>{errorMessage}</p>
-            )}
           </div>
 
           <div>
@@ -1205,6 +1197,32 @@ export default function ShowCoverStudio() {
             <TimestampRecapCard ref={recap7Ref} label="Timestamp clip 4" hostName={hostName} djName={djName} showName={showName} date={date} FONTS_READY={FONTS_READY} />
           </div>
         )}
+
+        <div className="max-w-md mt-8 space-y-3">
+          <p className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>
+            Download your visuals now so you can post your recap on instagram!
+          </p>
+
+          {status === "submitting" && (
+            <p className="text-lg font-bold uppercase tracking-wide" style={{ color: HIGHLIGHT }}>
+              Warning: wait for the button to say "Submitted" or we won't receive your info!!
+            </p>
+          )}
+
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="w-full flex items-center justify-center gap-2 py-3 text-sm uppercase tracking-wide transition-opacity disabled:opacity-40"
+            style={{ background: HIGHLIGHT, color: INK }}
+          >
+            {status === "submitting" && <Loader2 size={16} className="animate-spin" />}
+            {status === "done" && <CheckCircle2 size={16} />}
+            {status === "submitting" ? "Uploading…" : status === "done" ? "Submitted!" : "Submit show"}
+          </button>
+          {status === "error" && (
+            <p className="text-xs" style={{ color: "#e07a5f" }}>{errorMessage}</p>
+          )}
+        </div>
       </div>
 
       <style>{`
