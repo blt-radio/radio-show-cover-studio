@@ -903,7 +903,7 @@ export default function ShowCoverStudio() {
     setStatus("submitting");
     setErrorMessage("");
     try {
-      const base = `BLTshow-${slugify(djName) || "artist"}-${date || "date"}`;
+      const base = `-${slugify(djName) || "artist"}-${date || "date"}`;
       const folderId = await getOrCreateShowFolder(base);
 
       const [storyBlob, tallBlob, squareBlob] = await Promise.all([
