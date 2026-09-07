@@ -871,7 +871,7 @@ export default function ShowCoverStudio() {
   const handleDownload = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const base = `BLTshow-${slugify(djName) || "artist"}-${date || "date"}`;
+    const base = `${slugify(djName) || "artist"}-${date || "date"}`;
     const link = document.createElement("a");
     link.download = `${base}-${format}.png`;
     link.href = canvas.toDataURL("image/png");
