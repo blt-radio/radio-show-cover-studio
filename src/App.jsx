@@ -575,6 +575,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
   const videoElRef = useRef(null);
   const overlayVideoElRef = useRef(null);
   const audioElRef = useRef(null);
+  const audioGraphRef = useRef(null); // { ctx, source } — created once, reused forever
   const fileInputRef = useRef(null);
   const audioInputRef = useRef(null);
   const rafRef = useRef(null);
@@ -594,6 +595,12 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
     overlay.loop = true;
     overlay.playsInline = true;
     overlay.play().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (audioGraphRef.current) audioGraphRef.current.ctx.close().catch(() => {});
+    };
   }, []);
 
   const handleFile = (file) => {
@@ -664,14 +671,23 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
     // we never draw its picture, even if it came from a video file) through
     // Web Audio into its own MediaStreamAudioDestinationNode, then combine
     // that audio track with the canvas's video track into one stream.
-    let audioCtx = null;
+    // A given <audio> element can only ever be connected to ONE
+    // MediaElementSourceNode for its whole lifetime, so that connection is
+    // created lazily just once and reused on every subsequent export
+    // (download, then submit, then download again, etc).
     let combinedStream = videoStream;
+    let dest = null;
     const audioEl = audioElRef.current;
     if (audioFile && audioEl) {
       await waitForVideoReady(audioEl);
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioCtx.createMediaElementSource(audioEl);
-      const dest = audioCtx.createMediaStreamDestination();
+      if (!audioGraphRef.current) {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = ctx.createMediaElementSource(audioEl);
+        audioGraphRef.current = { ctx, source };
+      }
+      const { ctx, source } = audioGraphRef.current;
+      if (ctx.state === "suspended") await ctx.resume();
+      dest = ctx.createMediaStreamDestination();
       source.connect(dest);
       combinedStream = new MediaStream([
         ...videoStream.getVideoTracks(),
@@ -721,7 +737,9 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
           video.loop = false;
           if (audioEl) { audioEl.loop = false; audioEl.pause(); }
           recorder.stop();
-          if (audioCtx) audioCtx.close().catch(() => {});
+          if (dest && audioGraphRef.current) {
+            audioGraphRef.current.source.disconnect(dest);
+          }
           resolve();
         }
       }
@@ -779,7 +797,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
             <input className="input" value={timestamp} onChange={(e) => setTimestamp(e.target.value)} placeholder="e.g. 01:23:45" />
           </Field>
           <div>
-            <label className="label mb-2 block">Add audio (optional)</label>
+            <label className="label mb-2 block">Add audio</label>
             <div
               onClick={() => audioInputRef.current?.click()}
               className="cursor-pointer border border-dashed flex items-center justify-center py-6 px-2 text-center"
