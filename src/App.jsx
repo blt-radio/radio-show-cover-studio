@@ -458,8 +458,10 @@ function waitForVideoReady(video) {
   });
 }
 
-function pickVideoMimeType() {
-  const options = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+function pickVideoMimeType(withAudio) {
+  const options = withAudio
+    ? ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
+    : ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
   for (const opt of options) {
     if (window.MediaRecorder && MediaRecorder.isTypeSupported(opt)) return opt;
   }
@@ -565,12 +567,16 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
 ) {
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
+  const [audioFile, setAudioFile] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
   const [timestamp, setTimestamp] = useState("");
   const [exporting, setExporting] = useState(false);
   const canvasRef = useRef(null);
   const videoElRef = useRef(null);
   const overlayVideoElRef = useRef(null);
+  const audioElRef = useRef(null);
   const fileInputRef = useRef(null);
+  const audioInputRef = useRef(null);
   const rafRef = useRef(null);
   const stateRef = useRef({});
   const W = 1080, H = 1440;
@@ -594,6 +600,16 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
     if (!file || !file.type.startsWith("video/")) return;
     setVideoFile(file);
     setVideoUrl(URL.createObjectURL(file));
+  };
+
+  // Accepts either an audio file or a video file — either way, only its
+  // audio track ever gets used. We never draw this element's picture
+  // anywhere, so a video's visual track is effectively discarded by simply
+  // never being touched; only the sound is routed into the export.
+  const handleAudioFile = (file) => {
+    if (!file || !(file.type.startsWith("audio/") || file.type.startsWith("video/"))) return;
+    setAudioFile(file);
+    setAudioUrl(URL.createObjectURL(file));
   };
 
   useEffect(() => {
@@ -642,8 +658,28 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
     exportCanvas.width = W;
     exportCanvas.height = H;
     const ctx = exportCanvas.getContext("2d");
-    const stream = exportCanvas.captureStream(30);
-    const recorder = new MediaRecorder(stream, { mimeType: pickVideoMimeType() });
+    const videoStream = exportCanvas.captureStream(30);
+
+    // If an audio file was provided, route its sound (and only its sound —
+    // we never draw its picture, even if it came from a video file) through
+    // Web Audio into its own MediaStreamAudioDestinationNode, then combine
+    // that audio track with the canvas's video track into one stream.
+    let audioCtx = null;
+    let combinedStream = videoStream;
+    const audioEl = audioElRef.current;
+    if (audioFile && audioEl) {
+      await waitForVideoReady(audioEl);
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaElementSource(audioEl);
+      const dest = audioCtx.createMediaStreamDestination();
+      source.connect(dest);
+      combinedStream = new MediaStream([
+        ...videoStream.getVideoTracks(),
+        ...dest.stream.getAudioTracks(),
+      ]);
+    }
+
+    const recorder = new MediaRecorder(combinedStream, { mimeType: pickVideoMimeType(!!audioFile) });
     const chunks = [];
 
     const donePromise = new Promise((resolve, reject) => {
@@ -665,6 +701,12 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
       await overlay.play().catch(() => {});
     }
 
+    if (audioFile && audioEl) {
+      audioEl.currentTime = 0;
+      audioEl.loop = true;
+      await audioEl.play().catch(() => {});
+    }
+
     const DURATION_MS = 20000;
     const startTime = performance.now();
     recorder.start();
@@ -677,7 +719,9 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
           requestAnimationFrame(frameLoop);
         } else {
           video.loop = false;
+          if (audioEl) { audioEl.loop = false; audioEl.pause(); }
           recorder.stop();
+          if (audioCtx) audioCtx.close().catch(() => {});
           resolve();
         }
       }
@@ -685,7 +729,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
     });
 
     return donePromise;
-  }, [videoFile]);
+  }, [videoFile, audioFile]);
 
   const handleDownload = async () => {
     setExporting(true);
@@ -734,6 +778,19 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
           <Field label="Timestamp">
             <input className="input" value={timestamp} onChange={(e) => setTimestamp(e.target.value)} placeholder="e.g. 01:23:45" />
           </Field>
+          <div>
+            <label className="label mb-2 block">Add audio (optional)</label>
+            <div
+              onClick={() => audioInputRef.current?.click()}
+              className="cursor-pointer border border-dashed flex items-center justify-center py-6 px-2 text-center"
+              style={{ borderColor: "rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.03)" }}
+            >
+              <span className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
+                {audioFile ? audioFile.name : "upload an audio file, or a video — only its sound will be used"}
+              </span>
+              <input ref={audioInputRef} type="file" accept="audio/*,video/*" className="hidden" onChange={(e) => handleAudioFile(e.target.files[0])} />
+            </div>
+          </div>
           <button
             type="button"
             onClick={handleDownload}
@@ -746,6 +803,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
           </button>
           <video ref={videoElRef} src={videoUrl || undefined} className="hidden" playsInline muted />
           <video ref={overlayVideoElRef} src="/dvd-overlay.webm" className="hidden" playsInline muted loop />
+          <audio ref={audioElRef} src={audioUrl || undefined} className="hidden" />
         </div>
         <div className="overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.12)" }}>
           <canvas ref={canvasRef} className="w-full h-auto block" style={{ aspectRatio: `${W} / ${H}` }} />
@@ -903,7 +961,7 @@ export default function ShowCoverStudio() {
     setStatus("submitting");
     setErrorMessage("");
     try {
-      const base = `-${slugify(djName) || "artist"}-${date || "date"}`;
+      const base = `${slugify(djName) || "artist"}-${date || "date"}`;
       const folderId = await getOrCreateShowFolder(base);
 
       const [storyBlob, tallBlob, squareBlob] = await Promise.all([
