@@ -797,7 +797,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
             <input className="input" value={timestamp} onChange={(e) => setTimestamp(e.target.value)} placeholder="e.g. 01:23:45" />
           </Field>
           <div>
-            <label className="label mb-2 block">Add audio</label>
+            <label className="label mb-2 block">Add audio (optional)</label>
             <div
               onClick={() => audioInputRef.current?.click()}
               className="cursor-pointer border border-dashed flex items-center justify-center py-6 px-2 text-center"
@@ -956,23 +956,11 @@ export default function ShowCoverStudio() {
 
   const canSubmit = djName && showName && date && time && imgFile && audioFile && status !== "submitting";
 
-  const isDateTooSoon = () => {
-    if (!date) return false;
-    const showDate = new Date(date + "T00:00:00");
-    const now = new Date();
-    return showDate - now < 7 * 24 * 60 * 60 * 1000;
-  };
-
   const handleSubmit = async () => {
     if (!canSubmit) return;
     if (!jingleConfirmed) {
       setStatus("error");
       setErrorMessage("You need to add the jingle in your sound file before submitting.");
-      return;
-    }
-    if (isDateTooSoon()) {
-      setStatus("error");
-      setErrorMessage("Your show is in less than a week : too late to submit your info :( - Check with us to set another date.");
       return;
     }
 
