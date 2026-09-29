@@ -5,12 +5,12 @@ const HIGHLIGHT = "#FEBAED";
 const INK = "#341616";
 
 // ---- CONFIGURE THESE VALUES ----
-const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/7ty8ba4bkzity9agcsajmn8o3g6axtq6";
+const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/REPLACE_WITH_YOUR_WEBHOOK_ID";
 // Sent as a header on every /api call. Must match APP_UPLOAD_SECRET in Vercel's
 // env vars. NOTE: since this is a static site, this string is visible to
 // anyone who inspects the compiled JS — it's a speed bump against casual
 // discovery of the endpoint, not a cryptographic secret.
-const APP_SECRET = "le25juin1999puisle6aout1999puisle18janvier2000sontnesles3bombesquiontfondecetteradio";
+const APP_SECRET = "REPLACE_WITH_YOUR_SHARED_SECRET";
 // ---------------------------------
 
 const JINGLE_URL = "https://drive.google.com/drive/folders/1ZCNkK2DDHu0maema4xB-Xd1m74dvZs2M?usp=drive_link";
@@ -196,7 +196,8 @@ function renderCover(ctx, w, h, format, state) {
   const padX = 40 * k;
   const padTop = 40 * k;
   const padBottom = 40 * k;
-  const maxTextWidth = 500 * k;
+  const columnGap = 16 * k;
+  const colWidth = (1000 * k - columnGap) / 2; // 492px each at full scale, 16px gap between
 
   const storyPad = format === "story" ? ((h - 1440 * k) / 2) : 0;
   const contentTop = storyPad;
@@ -241,7 +242,7 @@ function renderCover(ctx, w, h, format, state) {
   const djLineHeight = djFontSize * 0.87;
   ctx.font = `700 ${djFontSize}px ${fontStack}`;
   if ("letterSpacing" in ctx) ctx.letterSpacing = `${(-0.03 * djFontSize).toFixed(2)}px`;
-  const djLines = wrapLines(ctx, djName || "dj name", maxTextWidth);
+  const djLines = wrapLines(ctx, djName || "dj name", colWidth);
   ctx.fillStyle = "#FFFFFF";
   djLines.forEach((line, i) => {
     const baseline = leftCursor + djFontSize * 0.78 + i * djLineHeight;
@@ -256,7 +257,7 @@ function renderCover(ctx, w, h, format, state) {
   const pillGap = 8 * k;
   const pillPadX = 24 * k;
   const pillH = genreFontSize + 28 * k;
-  const rightContentEdge = padX + maxTextWidth;
+  const rightContentEdge = padX + colWidth;
   let cx = padX;
   let pillRowY = leftCursor + 24 * k;
   ctx.font = `400 ${genreFontSize}px ${fontStack}`;
@@ -285,7 +286,7 @@ function renderCover(ctx, w, h, format, state) {
   const rightX = w - padX;
 
   ctx.font = `700 ${showFontSize}px ${fontStack}`;
-  const showLines = wrapLines(ctx, showName || "Show name", maxTextWidth);
+  const showLines = wrapLines(ctx, showName || "Show name", colWidth);
   ctx.fillStyle = "#FFFFFF";
   showLines.forEach((line, i) => {
     const baseline = rightCursor + showFontSize * 0.78 + i * showLineHeight;
@@ -832,6 +833,298 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
 });
 
 // ============================================================
+// "How it works" info content (FR/EN)
+// ============================================================
+const INFO_CONTENT = {
+  fr: {
+    guests: {
+      title: "BRIEF WEBAPP (guests)",
+      blocks: [
+        { type: "p", text: "Déroulé :" },
+        {
+          type: "ul",
+          items: [
+            "On programme vos passages dans un calendrier google, et on vous invite sur l'event.",
+            "Avant J-7 de votre émission, allez sur notre webapp : https://blt-radio-show-submission.vercel.app/",
+            {
+              text: "Remplissez vos infos :",
+              sub: [
+                "Votre nom, le nom de l'émission, les \"tags\" pour indiquer le format et les genres musicaux…",
+                "Votre image de couverture",
+                "Votre fichier son AVEC LE JINGLE (lien dans l'app)",
+                "Cochez si OUI/NON vous voulez un post recap. Si oui, créez vos visuels avec la web app. N'hésitez pas à être créatifs, tester des choses, ajouter des contenus qui mettent en valeur votre travail… Vous pouvez télécharger vos visuels. Vous pouvez échanger avec nous si vous avez une idée/demande particulière pour le post.",
+                "Cliquez sur \"SUBMIT\" pour qu'on reçoive tout ça.",
+              ],
+            },
+            {
+              text: "Automatiquement :",
+              sub: [
+                "Vos visuels sont mis sur notre drive",
+                "Votre fichier son est uploadé sur soundcloud",
+                "Notre calendrier est mis à jour pour indiquer que vous avez envoyé vos infos.",
+              ],
+            },
+            "Le weekend précédent votre émission, on prépare le visuel \"agenda de la semaine\". Si vous n'avez pas rempli vous infos, votre passage est déprogrammé et vous n'êtes pas dans l'agenda.",
+            "Votre emission est (1) annoncée avec une story insta à j-1, puis (2) diffusée sur les ondes, puis (3) publiée sur soundcloud.",
+            "Le post recap (si vous avez coché OUI), est posté à j+1 de votre passage, en CROSSPOST (obligatoire).",
+          ],
+        },
+      ],
+    },
+    residents: {
+      title: "BRIEF WEBAPP (résident-es)",
+      blocks: [
+        { type: "p", text: "Ce qui change :" },
+        {
+          type: "ul",
+          items: [
+            "Vous ne passez plus par les formulaires.",
+            "Vous postez vous-memes vos recaps sur instagram.",
+          ],
+        },
+        { type: "p", text: "Déroulé :" },
+        {
+          type: "ul",
+          items: [
+            "On programme vos passages comme toujours dans le calendrier google.",
+            {
+              text: "Si vous avez un-e invité-e :",
+              sub: [
+                "Validez avec nous, et si possible avant le début du mois pour qu'on puisse le mettre dans la prog du mois.",
+                "Vous êtes chargé-e-s de leur transmettre les infos sur comment ça se passe, les formulaires etc. Le nouveau formulaire est le même pour les résidents et les guests.",
+              ],
+            },
+            "Avant J-7 de votre emission, allez sur https://blt-radio-show-submission.vercel.app/",
+            {
+              text: "Remplissez vos infos :",
+              sub: [
+                "Nom, tags etc comme d'habitude",
+                "Image de couverture",
+                "Fichier son AVEC LE JINGLE",
+                "Cochez si OUI/NON vous voulez un post recap. Si oui, créez vos visuels avec la web app. Téléchargez vos visuels puisque c'est vous qui allez les poster. N'hésitez pas à être créatifs, tester des choses, ajouter des contenus qui mettent en valeur votre travail…",
+                "Cliquez sur \"SUBMIT\" pour qu'on reçoive tout ça.",
+              ],
+            },
+            {
+              text: "Automatiquement :",
+              sub: [
+                "Vos visuels sont mis sur notre drive",
+                "Votre fichier son est uploadé sur soundcloud",
+                "Notre calendrier est mis à jour pour indiquer que vous avez envoyé vos infos.",
+              ],
+            },
+            "Le weekend précédent votre émission, on prépare le visuel \"agenda de la semaine\". Si vous n'avez pas rempli vos infos, votre passage est déprogrammé et vous n'êtes pas dans l'agenda.",
+            "Votre émission est comme d'hab (1) annoncée avec une story insta, puis (2) diffusée sur les ondes, puis (3) publiée sur soundcloud.",
+            "Pour faire un post recap, créez vos visuels dans la webapp (vous pouvez à tout moment retourner créer des visuels dans l'app, par contre ne cliquez pas \"submit\" pour pas nous spammer avec vos tests).",
+            "Checkez avec Boubou quel jour est possible pour poster (afin qu'on ait pas 2 résidents qui crosspostent en même temps).",
+            "Ajoutez BLT en crosspost au moment de publier !",
+          ],
+        },
+      ],
+    },
+  },
+  en: {
+    guests: {
+      title: "WEBAPP BRIEF (guests)",
+      blocks: [
+        { type: "p", text: "How it works:" },
+        {
+          type: "ul",
+          items: [
+            "We schedule your slot in a Google calendar and invite you to the event.",
+            "Before D-7 of your show, go to our webapp: https://blt-radio-show-submission.vercel.app/",
+            {
+              text: "Fill in your info:",
+              sub: [
+                "Your name, the show name, and \"tags\" for the format and music genres…",
+                "Your cover image",
+                "Your audio file WITH THE JINGLE (link in the app)",
+                "Check YES/NO if you want a recap post. If yes, build your visuals with the web app. Feel free to get creative, try things out, add content that shows off your work… You can download your visuals. You can also reach out to us if you have a specific idea/request for the post.",
+                "Click \"SUBMIT\" so we receive everything.",
+              ],
+            },
+            {
+              text: "Automatically:",
+              sub: [
+                "Your visuals are added to our drive",
+                "Your audio file is uploaded to SoundCloud",
+                "Our calendar is updated to show you've submitted your info.",
+              ],
+            },
+            "The weekend before your show, we prepare the \"week's schedule\" visual. If you haven't filled in your info, your slot is dropped and you won't be in the schedule.",
+            "Your show is (1) announced with an Instagram story on D-1, then (2) broadcast on air, then (3) published on SoundCloud.",
+            "The recap post (if you checked YES) is posted on D+1 after your show, as a CROSSPOST (mandatory).",
+          ],
+        },
+      ],
+    },
+    residents: {
+      title: "WEBAPP BRIEF (residents)",
+      blocks: [
+        { type: "p", text: "What's changing:" },
+        {
+          type: "ul",
+          items: [
+            "You no longer go through the forms.",
+            "You post your own recaps on Instagram yourselves.",
+          ],
+        },
+        { type: "p", text: "How it works:" },
+        {
+          type: "ul",
+          items: [
+            "We schedule your slots as always in the Google calendar.",
+            {
+              text: "If you have a guest:",
+              sub: [
+                "Confirm with us, ideally before the start of the month so we can include it in that month's schedule.",
+                "You're responsible for passing on the info about how it works, the forms, etc. The new form is the same for residents and guests.",
+              ],
+            },
+            "Before D-7 of your show, go to https://blt-radio-show-submission.vercel.app/",
+            {
+              text: "Fill in your info:",
+              sub: [
+                "Name, tags etc. as usual",
+                "Cover image",
+                "Audio file WITH THE JINGLE",
+                "Check YES/NO if you want a recap post. If yes, build your visuals with the web app. Download your visuals since you're the one posting them. Feel free to get creative, try things out, add content that shows off your work…",
+                "Click \"SUBMIT\" so we receive everything.",
+              ],
+            },
+            {
+              text: "Automatically:",
+              sub: [
+                "Your visuals are added to our drive",
+                "Your audio file is uploaded to SoundCloud",
+                "Our calendar is updated to show you've submitted your info.",
+              ],
+            },
+            "The weekend before your show, we prepare the \"week's schedule\" visual. If you haven't filled in your info, your slot is dropped and you won't be in the schedule.",
+            "Your show is, as usual, (1) announced with an Instagram story, then (2) broadcast on air, then (3) published on SoundCloud.",
+            "To do a recap post, build your visuals in the webapp (you can go back and create visuals in the app any time, but don't click \"submit\" so you don't spam us with your tests).",
+            "Check with Boubou which day works for posting (so we don't have 2 residents crossposting at the same time).",
+            "Add BLT as a crosspost when you publish!",
+          ],
+        },
+      ],
+    },
+  },
+};
+
+function InfoBlockList({ blocks }) {
+  return (
+    <>
+      {blocks.map((block, i) => {
+        if (block.type === "p") {
+          return (
+            <p key={i} className="text-sm font-bold mt-4 mb-2 first:mt-0" style={{ color: "#FEBAED" }}>
+              {block.text}
+            </p>
+          );
+        }
+        return (
+          <ul key={i} className="space-y-2">
+            {block.items.map((item, j) => {
+              const isObj = typeof item === "object";
+              return (
+                <li key={j} className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.85)" }}>
+                  <span className="mr-2" style={{ color: "#FEBAED" }}>—</span>
+                  {isObj ? item.text : item}
+                  {isObj && item.sub && (
+                    <ul className="mt-2 ml-5 space-y-2">
+                      {item.sub.map((s, k) => (
+                        <li key={k} className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.7)" }}>
+                          <span className="mr-2" style={{ color: "rgba(255,255,255,0.4)" }}>·</span>
+                          {s}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        );
+      })}
+    </>
+  );
+}
+
+function InfoModal({ lang, setLang, onClose }) {
+  const content = INFO_CONTENT[lang];
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start md:items-center justify-center p-4 md:p-8 overflow-y-auto"
+      style={{ background: "rgba(0,0,0,0.7)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl my-8 md:my-0 border"
+        style={{ background: "#341616", borderColor: "rgba(255,255,255,0.15)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="flex items-center justify-between px-6 py-4 border-b sticky top-0"
+          style={{ borderColor: "rgba(255,255,255,0.15)", background: "#341616" }}
+        >
+          <span className="text-xs tracking-widest uppercase" style={{ color: "#FEBAED" }}>
+            How it works
+          </span>
+          <div className="flex items-center gap-3">
+            <div className="flex border" style={{ borderColor: "rgba(255,255,255,0.2)" }}>
+              {[{ id: "fr", label: "FR" }, { id: "en", label: "EN" }].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setLang(opt.id)}
+                  className="px-3 py-1.5 text-xs transition-colors"
+                  style={{
+                    background: lang === opt.id ? "#FEBAED" : "transparent",
+                    color: lang === opt.id ? "#111111" : "rgba(255,255,255,0.6)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="text-2xl leading-none hover:opacity-70"
+              style={{ background: "none", border: "none", color: "#FFFFFF", cursor: "pointer" }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <div className="px-6 py-5 max-h-[70vh] overflow-y-auto">
+          <h2 className="text-lg font-bold mb-3" style={{ color: "#FFFFFF" }}>{content.guests.title}</h2>
+          <InfoBlockList blocks={content.guests.blocks} />
+
+          <div className="my-6 border-t" style={{ borderColor: "rgba(255,255,255,0.15)" }} />
+
+          <h2 className="text-lg font-bold mb-3" style={{ color: "#FFFFFF" }}>{content.residents.title}</h2>
+          <InfoBlockList blocks={content.residents.blocks} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // Main component
 // ============================================================
 export default function ShowCoverStudio() {
@@ -856,6 +1149,8 @@ export default function ShowCoverStudio() {
   const [darkOverlay, setDarkOverlay] = useState(true);
   const [convertingImage, setConvertingImage] = useState(false);
   const [wantsRecap, setWantsRecap] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const [infoLang, setInfoLang] = useState("fr");
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -1046,6 +1341,17 @@ export default function ShowCoverStudio() {
           <img src="/logo.svg" alt="BLT Radio" className="w-full h-auto block" />
         </a>
         <div className="absolute top-0 right-0 flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setShowInfo(true)}
+            aria-label="How it works"
+            className="flex items-center justify-center transition-opacity hover:opacity-70"
+            style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="#FFFFFF" viewBox="0 0 256 256">
+              <path d="M140,180a12,12,0,1,1-12-12A12,12,0,0,1,140,180ZM128,72c-22.06,0-40,16.15-40,36v4a8,8,0,0,0,16,0v-4c0-11,10.77-20,24-20s24,9,24,20-10.77,20-24,20a8,8,0,0,0-8,8v8a8,8,0,0,0,16,0v-.72c18.24-3.35,32-17.9,32-35.28C168,88.15,150.06,72,128,72Zm104,56A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"></path>
+            </svg>
+          </button>
           <a href="https://www.instagram.com/blt_radio/" target="_blank" rel="noopener noreferrer">
             <img src="/instagram-logo.svg" alt="Instagram" style={{ width: 22, height: 22, filter: "brightness(0) invert(1)" }} />
           </a>
@@ -1054,6 +1360,8 @@ export default function ShowCoverStudio() {
           </a>
         </div>
       </div>
+
+      {showInfo && <InfoModal lang={infoLang} setLang={setInfoLang} onClose={() => setShowInfo(false)} />}
 
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center gap-2 mb-1">
