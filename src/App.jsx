@@ -10,7 +10,7 @@ const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/7ty8ba4bkzity9agcsajmn8o3g6a
 // env vars. NOTE: since this is a static site, this string is visible to
 // anyone who inspects the compiled JS — it's a speed bump against casual
 // discovery of the endpoint, not a cryptographic secret.
-const APP_SECRET = "https://blt-radio-show-submission.vercel.app/api/soundcloud-connect?key=YOUR_APP_UPLOAD_SECRET";
+const APP_SECRET = "le25juin1999puisle6aout1999puisle18janvier2000sontnesles3bombesquiontfondecetteradio";
 // ---------------------------------
 
 const JINGLE_URL = "https://drive.google.com/drive/folders/1ZCNkK2DDHu0maema4xB-Xd1m74dvZs2M?usp=drive_link";
