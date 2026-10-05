@@ -477,9 +477,14 @@ function renderVideoFrame(ctx, w, h, video, overlayVideo, state) {
 }
 
 function waitForVideoReady(video) {
-  return new Promise((resolve) => {
-    if (video.readyState >= 1) resolve();
-    else video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+  return new Promise((resolve, reject) => {
+    if (video.readyState >= 1) return resolve();
+    const done = (fn) => { clearTimeout(timer); video.removeEventListener("loadedmetadata", onOk); video.removeEventListener("error", onErr); fn(); };
+    const onOk = () => done(resolve);
+    const onErr = () => done(() => reject(new Error("Your browser can't read this file. Try an MP4 (H.264) or WebM file.")));
+    const timer = setTimeout(onErr, 15000);
+    video.addEventListener("loadedmetadata", onOk);
+    video.addEventListener("error", onErr);
   });
 }
 
@@ -622,6 +627,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
   const [audioUrl, setAudioUrl] = useState(null);
   const [timestamp, setTimestamp] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const canvasRef = useRef(null);
   const videoElRef = useRef(null);
   const overlayVideoElRef = useRef(null);
@@ -767,7 +773,10 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
 
     const donePromise = new Promise((resolve, reject) => {
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-      recorder.onstop = () => resolve(new Blob(chunks, { type: (recorder.mimeType || "video/webm").split(";")[0] }));
+      recorder.onstop = () => {
+        combinedStream.getTracks().forEach((t) => t.stop());
+        resolve(new Blob(chunks, { type: (recorder.mimeType || "video/webm").split(";")[0] }));
+      };
       recorder.onerror = reject;
     });
 
@@ -799,7 +808,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
       ? Math.min(mediaSeconds, MAX_EXPORT_SECONDS)
       : DEFAULT_EXPORT_SECONDS) * 1000;
     const startTime = performance.now();
-    recorder.start();
+    recorder.start(1000); // flush data every second so the end of the recording is never one big pending write
 
     await new Promise((resolve) => {
       function frameLoop() {
@@ -808,11 +817,14 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
         if (elapsed < DURATION_MS) {
           requestAnimationFrame(frameLoop);
         } else {
+          // Cut everything at the same instant: silence the sound feed and
+          // freeze the sources first, then stop recording.
+          if (dest && activeSource) activeSource.disconnect(dest);
+          video.pause();
           video.loop = false;
           video.muted = true;
           if (audioEl) { audioEl.loop = false; audioEl.pause(); }
           recorder.stop();
-          if (dest && activeSource) activeSource.disconnect(dest);
           resolve();
         }
       }
@@ -824,6 +836,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
 
   const handleDownload = async () => {
     setExporting(true);
+    setExportError("");
     try {
       const blob = await exportVideo();
       const url = URL.createObjectURL(blob);
@@ -834,6 +847,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
+      setExportError(err.message || "Export failed");
     } finally {
       setExporting(false);
     }
@@ -892,6 +906,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
             {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
             {exporting ? "processing… (takes as long as the video lasts)" : "download video"}
           </button>
+          {exportError && <p className="text-xs" style={{ color: "#e07a5f" }}>{exportError}</p>}
           <video ref={videoElRef} src={videoUrl || undefined} className="hidden" playsInline muted />
           <video ref={overlayVideoElRef} src="/dvd-overlay.webm" className="hidden" playsInline muted loop />
           <audio ref={audioElRef} src={audioUrl || undefined} className="hidden" />
