@@ -483,15 +483,41 @@ function waitForVideoReady(video) {
   });
 }
 
+// Prefers MP4 (H.264 + AAC) when the browser can record it natively (Chrome
+// 126+, Edge, Safari); falls back to WebM (e.g. Firefox).
 function pickVideoMimeType(withAudio) {
   const options = withAudio
-    ? ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
-    : ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    ? [
+        "video/mp4;codecs=avc1.640028,mp4a.40.2",
+        "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+        "video/mp4;codecs=avc1,mp4a.40.2",
+        "video/mp4",
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm",
+      ]
+    : [
+        "video/mp4;codecs=avc1.640028",
+        "video/mp4;codecs=avc1.42E01E",
+        "video/mp4;codecs=avc1",
+        "video/mp4",
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+      ];
   for (const opt of options) {
     if (window.MediaRecorder && MediaRecorder.isTypeSupported(opt)) return opt;
   }
   return "video/webm";
 }
+
+function extForMime(mime) {
+  return (mime || "").includes("mp4") ? ".mp4" : ".webm";
+}
+
+const VIDEO_BITS_PER_SECOND = 8_000_000; // default (~2.5 Mbps) is what makes 1080x1440 look blocky/hatched
+const DEFAULT_EXPORT_SECONDS = 20; // fallback if the media length can't be read
+const MAX_EXPORT_SECONDS = 60; // safety cap: export runs in real time
 
 // ============================================================
 // Recap sub-components
@@ -601,6 +627,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
   const overlayVideoElRef = useRef(null);
   const audioElRef = useRef(null);
   const audioGraphRef = useRef(null); // { ctx, source } — created once, reused forever
+  const videoGraphRef = useRef(null); // same, for the uploaded video's own soundtrack
   const fileInputRef = useRef(null);
   const audioInputRef = useRef(null);
   const rafRef = useRef(null);
@@ -625,6 +652,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
   useEffect(() => {
     return () => {
       if (audioGraphRef.current) audioGraphRef.current.ctx.close().catch(() => {});
+      if (videoGraphRef.current) videoGraphRef.current.ctx.close().catch(() => {});
     };
   }, []);
 
@@ -700,38 +728,54 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
     // MediaElementSourceNode for its whole lifetime, so that connection is
     // created lazily just once and reused on every subsequent export
     // (download, then submit, then download again, etc).
+    // If NO audio file was uploaded, the video's own soundtrack is used
+    // instead — same technique, with its own once-only MediaElementSourceNode
+    // on the <video> element. Only one of the two is ever routed per export.
     let combinedStream = videoStream;
     let dest = null;
+    let activeSource = null;
     const audioEl = audioElRef.current;
-    if (audioFile && audioEl) {
-      await waitForVideoReady(audioEl);
-      if (!audioGraphRef.current) {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const source = ctx.createMediaElementSource(audioEl);
-        audioGraphRef.current = { ctx, source };
+    const useVideoAudio = !audioFile;
+    {
+      const graphRef = useVideoAudio ? videoGraphRef : audioGraphRef;
+      const mediaEl = useVideoAudio ? video : audioEl;
+      if (mediaEl) {
+        if (!useVideoAudio) await waitForVideoReady(mediaEl);
+        if (!graphRef.current) {
+          const actx = new (window.AudioContext || window.webkitAudioContext)();
+          const source = actx.createMediaElementSource(mediaEl);
+          graphRef.current = { ctx: actx, source };
+        }
+        const { ctx: actx, source } = graphRef.current;
+        if (actx.state === "suspended") await actx.resume();
+        dest = actx.createMediaStreamDestination();
+        source.connect(dest);
+        activeSource = source;
+        combinedStream = new MediaStream([
+          ...videoStream.getVideoTracks(),
+          ...dest.stream.getAudioTracks(),
+        ]);
       }
-      const { ctx, source } = audioGraphRef.current;
-      if (ctx.state === "suspended") await ctx.resume();
-      dest = ctx.createMediaStreamDestination();
-      source.connect(dest);
-      combinedStream = new MediaStream([
-        ...videoStream.getVideoTracks(),
-        ...dest.stream.getAudioTracks(),
-      ]);
     }
 
-    const recorder = new MediaRecorder(combinedStream, { mimeType: pickVideoMimeType(!!audioFile) });
+    const recorder = new MediaRecorder(combinedStream, {
+      mimeType: pickVideoMimeType(true),
+      videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+      audioBitsPerSecond: 192_000,
+    });
     const chunks = [];
 
     const donePromise = new Promise((resolve, reject) => {
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-      recorder.onstop = () => resolve(new Blob(chunks, { type: "video/webm" }));
+      recorder.onstop = () => resolve(new Blob(chunks, { type: (recorder.mimeType || "video/webm").split(";")[0] }));
       recorder.onerror = reject;
     });
 
     video.currentTime = 0;
-    video.muted = true;
-    video.loop = true;
+    // Safe to unmute: once tapped by createMediaElementSource, the element's
+    // sound goes only into the recording graph, never to the speakers.
+    video.muted = !useVideoAudio;
+    video.loop = !useVideoAudio;
     await video.play().catch(() => {});
 
     const overlay = overlayVideoElRef.current;
@@ -748,7 +792,12 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
       await audioEl.play().catch(() => {});
     }
 
-    const DURATION_MS = 20000;
+    // Length of the export = length of the uploaded audio if there is one,
+    // otherwise the length of the uploaded video (capped at MAX_EXPORT_SECONDS).
+    const mediaSeconds = useVideoAudio ? video.duration : audioEl && audioEl.duration;
+    const DURATION_MS = (Number.isFinite(mediaSeconds) && mediaSeconds > 0
+      ? Math.min(mediaSeconds, MAX_EXPORT_SECONDS)
+      : DEFAULT_EXPORT_SECONDS) * 1000;
     const startTime = performance.now();
     recorder.start();
 
@@ -760,11 +809,10 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
           requestAnimationFrame(frameLoop);
         } else {
           video.loop = false;
+          video.muted = true;
           if (audioEl) { audioEl.loop = false; audioEl.pause(); }
           recorder.stop();
-          if (dest && audioGraphRef.current) {
-            audioGraphRef.current.source.disconnect(dest);
-          }
+          if (dest && activeSource) activeSource.disconnect(dest);
           resolve();
         }
       }
@@ -780,7 +828,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
       const blob = await exportVideo();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.download = `${label.replace(/\s+/g, "_")}.webm`;
+      link.download = `${label.replace(/\s+/g, "_")}${extForMime(blob.type)}`;
       link.href = url;
       link.click();
       URL.revokeObjectURL(url);
@@ -842,7 +890,7 @@ const TimestampRecapCard = forwardRef(function TimestampRecapCard(
             style={{ borderColor: HIGHLIGHT, color: HIGHLIGHT }}
           >
             {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-            {exporting ? "processing (~20s)…" : "download video"}
+            {exporting ? "processing… (takes as long as the video lasts)" : "download video"}
           </button>
           <video ref={videoElRef} src={videoUrl || undefined} className="hidden" playsInline muted />
           <video ref={overlayVideoElRef} src="/dvd-overlay.webm" className="hidden" playsInline muted loop />
@@ -1326,7 +1374,7 @@ export default function ShowCoverStudio() {
           const r = videoRefs[i];
           if (r.current && r.current.hasContent()) {
             const blob = await r.current.getBlob();
-            const uploaded = await uploadFileToDrive(new File([blob], `${base}-timestamp${i + 4}.webm`, { type: "video/webm" }), folderId);
+            const uploaded = await uploadFileToDrive(new File([blob], `${base}-timestamp${i + 4}${extForMime(blob.type)}`, { type: blob.type || "video/webm" }), folderId);
             recapPayload[`recap${i + 4}Url`] = uploaded.url;
           }
         }
