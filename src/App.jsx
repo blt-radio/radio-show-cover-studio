@@ -5,12 +5,12 @@ const HIGHLIGHT = "#FEBAED";
 const INK = "#341616";
 
 // ---- CONFIGURE THESE VALUES ----
-const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/7ty8ba4bkzity9agcsajmn8o3g6axtq6";
+const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/REPLACE_WITH_YOUR_WEBHOOK_ID";
 // Sent as a header on every /api call. Must match APP_UPLOAD_SECRET in Vercel's
 // env vars. NOTE: since this is a static site, this string is visible to
 // anyone who inspects the compiled JS — it's a speed bump against casual
 // discovery of the endpoint, not a cryptographic secret.
-const APP_SECRET = "le25juin1999puisle6aout1999puisle18janvier2000sontnesles3bombesquiontfondecetteradio";
+const APP_SECRET = "REPLACE_WITH_YOUR_SHARED_SECRET";
 // ---------------------------------
 
 const JINGLE_URL = "https://drive.google.com/drive/folders/1ZCNkK2DDHu0maema4xB-Xd1m74dvZs2M?usp=drive_link";
@@ -48,6 +48,30 @@ async function getOrCreateShowFolder(folderName) {
   }
   const { folderId } = await res.json();
   return folderId;
+}
+
+// Asks the server to start the Drive -> SoundCloud transfer (it runs in GitHub
+// Actions, so the audio never goes through Make.com). Never throws: a failure
+// here must not block the submission, it's just reported to Make.
+async function queueSoundcloudUpload(payload) {
+  try {
+    const res = await fetch("/api/soundcloud-publish", {
+      method: "POST",
+      headers: apiHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) console.error("SoundCloud queue failed:", await res.text());
+    return res.ok;
+  } catch (err) {
+    console.error("SoundCloud queue failed:", err);
+    return false;
+  }
+}
+
+// SoundCloud tag_list: space-separated, multi-word tags in double quotes.
+function toSoundcloudTags(genres) {
+  return (genres || "").split(",").map((g) => g.trim()).filter(Boolean)
+    .map((g) => (/\s/.test(g) ? `"${g}"` : g)).join(" ");
 }
 
 // Uploads a single file to Google Drive, into an already-known folder, by
@@ -1308,6 +1332,14 @@ export default function ShowCoverStudio() {
         }
       }
 
+      const soundcloudQueued = await queueSoundcloudUpload({
+        audioFileId: audioRes.fileId,
+        imageFileId: scRes.fileId,
+        title: `${showName} - ${djName}`,
+        tags: toSoundcloudTags(genres),
+        description: `${showName} - ${hostName && hostName.trim() ? `${hostName.trim()} invite ` : ""}${djName}`,
+      });
+
       const res = await fetch(MAKE_WEBHOOK_URL, {
         method: "POST",
         // text/plain avoids a CORS preflight; Make still auto-parses JSON regardless of header
@@ -1322,6 +1354,7 @@ export default function ShowCoverStudio() {
           soundcloudImageUrl: scRes.url,
           showFolderId: folderId,
           wantsRecap,
+          soundcloudQueued,
           ...recapPayload,
         }),
       });
