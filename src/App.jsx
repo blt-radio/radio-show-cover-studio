@@ -11,6 +11,11 @@ const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/7ty8ba4bkzity9agcsajmn8o3g6a
 // anyone who inspects the compiled JS — it's a speed bump against casual
 // discovery of the endpoint, not a cryptographic secret.
 const APP_SECRET = "le25juin1999puisle6aout1999puisle18janvier2000sontnesles3bombesquiontfondecetteradio";
+// URL of your Cloudflare Worker that relays upload chunks to Drive (keeps the
+// heavy file traffic off Vercel's free-plan transfer limit). Leave as "" to
+// use only the Vercel relay. If the Worker ever fails, uploads automatically
+// fall back to the Vercel relay.
+const UPLOAD_WORKER_URL = "blt-uploads.contact-bltradio.workers.dev";
 // ---------------------------------
 
 const JINGLE_URL = "https://drive.google.com/drive/folders/1ZCNkK2DDHu0maema4xB-Xd1m74dvZs2M?usp=drive_link";
@@ -80,6 +85,22 @@ function toSoundcloudTags(genres) {
 // policy doesn't allow browser-authenticated service-account requests, so a
 // direct upload isn't possible), and the access token never leaves the server.
 const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB — comfortably under Vercel's ~4.5MB function payload cap
+const WORKER_CHUNK_SIZE = 16 * 1024 * 1024; // Cloudflare accepts much bigger pieces (must stay a multiple of 256KB)
+
+function postChunk(url, uploadUrl, chunk, start, end, total) {
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      ...apiHeaders(),
+      "Content-Type": "application/octet-stream",
+      "x-upload-url": uploadUrl,
+      "x-range-start": String(start),
+      "x-range-end": String(end - 1),
+      "x-total-size": String(total),
+    },
+    body: chunk,
+  });
+}
 
 async function uploadFileToDrive(file, folderId) {
   const initRes = await fetch("/api/drive-upload-init", {
@@ -100,27 +121,34 @@ async function uploadFileToDrive(file, folderId) {
   const total = file.size;
   let start = 0;
   let result = null;
+  let useWorker = !!UPLOAD_WORKER_URL;
 
   while (start < total) {
-    const end = Math.min(start + CHUNK_SIZE, total);
+    const end = Math.min(start + (useWorker ? WORKER_CHUNK_SIZE : CHUNK_SIZE), total);
     const chunk = file.slice(start, end);
-    const chunkRes = await fetch("/api/drive-upload-chunk", {
-      method: "POST",
-      headers: {
-        ...apiHeaders(),
-        "Content-Type": "application/octet-stream",
-        "x-upload-url": uploadUrl,
-        "x-range-start": String(start),
-        "x-range-end": String(end - 1),
-        "x-total-size": String(total),
-      },
-      body: chunk,
-    });
-    if (!chunkRes.ok) {
-      const errData = await chunkRes.json().catch(() => ({}));
-      throw new Error(errData.error || `Drive chunk upload failed (${file.name}, HTTP ${chunkRes.status})`);
+    let data = null;
+
+    if (useWorker) {
+      try {
+        const res = await postChunk(UPLOAD_WORKER_URL, uploadUrl, chunk, start, end, total);
+        if (res.ok) data = await res.json();
+        else console.warn(`Upload worker answered HTTP ${res.status}; falling back to the Vercel relay.`);
+      } catch (err) {
+        console.warn("Upload worker unreachable; falling back to the Vercel relay.", err);
+      }
+      if (!data) {
+        useWorker = false; // redo this same range through Vercel, in smaller pieces
+        continue;
+      }
+    } else {
+      const res = await postChunk("/api/drive-upload-chunk", uploadUrl, chunk, start, end, total);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Drive chunk upload failed (${file.name}, HTTP ${res.status})`);
+      }
+      data = await res.json();
     }
-    const data = await chunkRes.json();
+
     if (data.done) result = data;
     start = end;
   }
